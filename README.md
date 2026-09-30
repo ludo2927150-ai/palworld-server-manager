@@ -29,6 +29,14 @@ cargo test -p palmanager-core          # tests de la logique métier
 npm run tauri build                    # installeur NSIS/MSI
 ```
 
+### Suivre les modifications en direct
+
+```powershell
+.\scripts\dev-live.ps1        # lance l'app + tire automatiquement les nouveaux commits (toutes les 10 s)
+```
+
+Les changements React/CSS s'affichent à chaud dans la fenêtre ; les changements Rust déclenchent une recompilation et un relancement automatiques. Si PowerShell refuse le script : `powershell -ExecutionPolicy Bypass -File .\scripts\dev-live.ps1`.
+
 Côté serveur Palworld, activer l'API REST dans `PalWorldSettings.ini` :
 `RESTAPIEnabled=True`, `RESTAPIPort=8212`, et définir `AdminPassword` (à recopier dans l'onglet « Application »).
 Ne pas exposer ce port sur Internet.
