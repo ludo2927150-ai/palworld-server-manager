@@ -24,11 +24,11 @@ pub fn diagnose_files(s: &AppSettings) -> Vec<Check> {
         chk("steamcmd", "SteamCMD trouvé (mises à jour)", s.steamcmd_path.exists() || s.steamcmd_path.components().count() == 1,
             s.steamcmd_path.display().to_string()),
     ];
-    match std::fs::read_to_string(&ini_path).ok().and_then(|c| ini::parse(&c).ok()) {
-        None => v.push(chk("ini", "PalWorldSettings.ini lisible", false,
-            format!("{} — lancez le serveur une fois, ou copiez DefaultPalWorldSettings.ini", ini_path.display()))),
-        Some(o) => {
-            v.push(chk("ini", "PalWorldSettings.ini lisible", true, ini_path.display().to_string()));
+    match s.load_world_options() {
+        Err(e) => v.push(chk("ini", "PalWorldSettings.ini lisible", false, e.to_string())),
+        Ok((o, from_default)) => {
+            let detail = if from_default { format!("{} est vide : valeurs par défaut utilisées (enregistrez la configuration pour le remplir)", ini_path.display()) } else { ini_path.display().to_string() };
+            v.push(chk("ini", "PalWorldSettings.ini lisible", true, detail));
             v.push(chk("rest_enabled", "API REST activée (RESTAPIEnabled=True)", ini::get(&o, "RESTAPIEnabled") == Some("True"), ""));
             let pw = ini::get(&o, "AdminPassword").unwrap_or("");
             v.push(chk("admin_password", "Mot de passe admin défini", !pw.is_empty(), ""));
@@ -56,11 +56,12 @@ pub async fn diagnose(s: &AppSettings) -> Vec<Check> {
 pub fn fix_rest(s: &AppSettings, admin_password: &str) -> Result<AppSettings> {
     if admin_password.trim().is_empty() { return Err(Error::Other("mot de passe admin vide".into())); }
     let path = s.world_settings_path();
-    let mut o = ini::parse(&std::fs::read_to_string(&path)?)?;
+    let (mut o, _) = s.load_world_options()?;
     ini::set(&mut o, "RESTAPIEnabled", "True", false);
     ini::set(&mut o, "RESTAPIPort", &s.rest.port.to_string(), false);
     ini::set(&mut o, "AdminPassword", admin_password, true);
-    std::fs::copy(&path, path.with_extension("ini.bak"))?;
+    if let Some(dir) = path.parent() { std::fs::create_dir_all(dir)?; }
+    if path.exists() { std::fs::copy(&path, path.with_extension("ini.bak"))?; }
     std::fs::write(&path, ini::serialize(&o))?;
     let mut out = s.clone();
     out.rest.admin_password = admin_password.to_string();

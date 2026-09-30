@@ -8,9 +8,10 @@ export default function Config({ notify }: { notify: (m: string) => void }) {
   const [opts, setOpts] = useState<Opt[] | null>(null);
   const [tab, setTab] = useState(GROUPS[0]);
   const [reviewing, setReviewing] = useState(false);
+  const [fromDefault, setFromDefault] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const load = useCallback(() => api.readWorld().then((o) => { setOrig(o); setOpts(o); }).catch((e) => notify(String(e))), [notify]);
+  const load = useCallback(() => api.readWorld().then(({ options, from_default }) => { setOrig(from_default ? [] : options); setOpts(options); setFromDefault(from_default); }).catch((e) => notify(String(e))), [notify]);
   useEffect(() => { load(); }, [load]);
 
   const changes = useMemo(() => {
@@ -35,7 +36,7 @@ export default function Config({ notify }: { notify: (m: string) => void }) {
     notify("Préréglage appliqué (pas encore enregistré)");
   };
   const save = () =>
-    api.writeWorld(opts).then(() => { setOrig(opts); setReviewing(false); notify("Configuration enregistrée (redémarrage du serveur requis)"); }).catch((e) => notify(String(e)));
+    api.writeWorld(opts).then(() => { setOrig(opts); setFromDefault(false); setReviewing(false); notify("Configuration enregistrée (redémarrage du serveur requis)"); }).catch((e) => notify(String(e)));
 
   const exportJson = () => {
     const blob = new Blob([JSON.stringify(opts, null, 2)], { type: "application/json" });
@@ -54,6 +55,11 @@ export default function Config({ notify }: { notify: (m: string) => void }) {
 
   return (
     <div className="space-y-4">
+      {fromDefault && (
+        <div className="rounded-lg border border-amber-500/50 bg-amber-500/10 p-3 text-sm text-amber-200" role="status">
+          PalWorldSettings.ini est vide (serveur jamais configuré) : les valeurs affichées viennent de DefaultPalWorldSettings.ini. Modifiez ce que vous voulez puis enregistrez pour créer le fichier.
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         {[...GROUPS, "Avancé"].map((g) => <button key={g} className={g === tab ? "btn-primary" : "btn"} onClick={() => setTab(g)}>{g}</button>)}
       </div>

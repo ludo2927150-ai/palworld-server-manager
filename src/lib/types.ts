@@ -22,3 +22,4 @@ export interface Sample { t: number; cpu: number; mem_percent: number; players: 
 export interface Session { name: string; start: number; end: number | null }
 export interface LogChunk { lines: string[]; offset: number }
 export interface Check { id: string; label: string; ok: boolean; detail: string }
+export interface WorldSettings { options: Opt[]; from_default: boolean }

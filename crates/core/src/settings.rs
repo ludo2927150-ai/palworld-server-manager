@@ -1,4 +1,4 @@
-use crate::Result;
+use crate::{ini, Error, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -103,6 +103,25 @@ impl AppSettings {
     pub fn world_settings_path(&self) -> PathBuf {
         self.server_dir.join("Pal/Saved/Config/WindowsServer/PalWorldSettings.ini")
     }
+    /// `<server>/DefaultPalWorldSettings.ini` : valeurs par défaut fournies avec le serveur.
+    pub fn default_world_settings_path(&self) -> PathBuf { self.server_dir.join("DefaultPalWorldSettings.ini") }
+
+    /// Options du monde. Sur une installation neuve `PalWorldSettings.ini` est vide (sans `OptionSettings`) :
+    /// on repart alors de `DefaultPalWorldSettings.ini`. Renvoie aussi `true` si ce repli a été utilisé.
+    pub fn load_world_options(&self) -> Result<(ini::Options, bool)> {
+        let real = std::fs::read_to_string(self.world_settings_path()).map_err(Error::from).and_then(|c| ini::parse(&c));
+        match real {
+            Ok(o) => Ok((o, false)),
+            Err(first) => match std::fs::read_to_string(self.default_world_settings_path()).map_err(Error::from).and_then(|c| ini::parse(&c)) {
+                Ok(o) => Ok((o, true)),
+                Err(_) => Err(Error::Other(format!(
+                    "{first} — ni PalWorldSettings.ini ni DefaultPalWorldSettings.ini n'est exploitable dans {} (vérifiez le dossier du serveur dans « Application »)",
+                    self.server_dir.display()
+                ))),
+            },
+        }
+    }
+
     /// `<server>/Pal/Saved/SaveGames`
     pub fn save_dir(&self) -> PathBuf { self.server_dir.join("Pal/Saved/SaveGames") }
 
@@ -117,5 +136,25 @@ impl AppSettings {
         if let Some(p) = path.parent() { std::fs::create_dir_all(p)?; }
         std::fs::write(path, serde_json::to_string_pretty(self)?)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn falls_back_to_default_when_ini_is_empty() {
+        let dir = std::env::temp_dir().join(format!("pal-world-{}", std::process::id()));
+        let s = AppSettings { server_dir: dir.clone(), ..Default::default() };
+        std::fs::create_dir_all(s.world_settings_path().parent().unwrap()).unwrap();
+        std::fs::write(s.world_settings_path(), "[/Script/Pal.PalGameWorldSettings]\n").unwrap();
+        assert!(s.load_world_options().is_err()); // pas de défaut disponible
+        std::fs::write(s.default_world_settings_path(), "[/Script/Pal.PalGameWorldSettings]\nOptionSettings=(ExpRate=1.000000)\n").unwrap();
+        let (o, from_default) = s.load_world_options().unwrap();
+        assert!(from_default && o.len() == 1);
+        std::fs::write(s.world_settings_path(), "[/Script/Pal.PalGameWorldSettings]\nOptionSettings=(ExpRate=2.000000)\n").unwrap();
+        assert!(!s.load_world_options().unwrap().1);
+        std::fs::remove_dir_all(dir).ok();
     }
 }

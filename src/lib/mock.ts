@@ -34,7 +34,7 @@ export async function mock<T>(cmd: string, args?: Record<string, unknown>): Prom
     }
     case "read_logs": return r({ lines: ["[demo] Server started", "[demo] Alice joined the game"], offset: 0 });
     case "diagnose": return r([{ id: "exe", label: "PalServer.exe trouvé", ok: true, detail: "" }, { id: "rest_enabled", label: "API REST activée (RESTAPIEnabled=True)", ok: false, detail: "" }]);
-    case "read_world_settings": return r(world);
+    case "read_world_settings": return r({ options: world, from_default: false });
     case "write_world_settings": world = (args as { options: Opt[] }).options; return r(undefined);
     case "list_backups": return r([{ file_name: "palworld-20260930-120000.zip", path: "backups/x.zip", size_bytes: 52_000_000, created: new Date().toISOString() }]);
     default: return r(undefined);

@@ -44,14 +44,22 @@ pub async fn server_restart(st: S<'_>) -> Result<()> {
 pub async fn get_snapshot(st: S<'_>) -> Result<Snapshot> { Ok(st.last_snapshot.read().await.clone()) }
 
 #[tauri::command]
-pub async fn read_world_settings(st: S<'_>) -> Result<Options> {
-    let path = st.settings.read().await.world_settings_path();
-    ini::parse(&std::fs::read_to_string(path)?)
+pub async fn read_world_settings(st: S<'_>) -> Result<WorldSettings> {
+    let (options, from_default) = st.settings.read().await.load_world_options()?;
+    Ok(WorldSettings { options, from_default })
+}
+
+#[derive(serde::Serialize)]
+pub struct WorldSettings {
+    pub options: Options,
+    /// `true` : PalWorldSettings.ini était vide, les valeurs viennent de DefaultPalWorldSettings.ini.
+    pub from_default: bool,
 }
 
 #[tauri::command]
 pub async fn write_world_settings(st: S<'_>, options: Options) -> Result<()> {
     let path = st.settings.read().await.world_settings_path();
+    if let Some(dir) = path.parent() { std::fs::create_dir_all(dir)?; }
     if path.exists() { std::fs::copy(&path, path.with_extension("ini.bak"))?; }
     std::fs::write(path, ini::serialize(&options))?;
     Ok(())
