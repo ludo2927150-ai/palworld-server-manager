@@ -25,5 +25,4 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: npm ci
-      - run: npx tauri icon .github/icon.png
       - run: cargo check -p palworld-server-manager

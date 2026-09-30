@@ -22,7 +22,7 @@ Prérequis : Node 20+, Rust stable, [prérequis Tauri pour Windows](https://taur
 
 ```bash
 npm install
-npm run tauri icon path/to/logo.png   # génère src-tauri/icons/ (requis pour le bundle)
+# (optionnel) npm run tauri icon logo.png  -> remplace les icônes fournies dans src-tauri/icons/
 npm run tauri dev                      # app complète
 npm run dev                            # UI seule dans un navigateur, avec données factices
 cargo test -p palmanager-core          # tests de la logique métier

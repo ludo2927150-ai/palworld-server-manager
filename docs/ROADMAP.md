@@ -4,7 +4,6 @@
 
 **Limites connues à traiter en priorité**
 - Compilation de `src-tauri` non validée dans l'environnement de génération (pas de WebView Linux) : première tâche = `npm run tauri dev` sur Windows et corriger les éventuelles erreurs.
-- Icônes à générer (`npm run tauri icon`).
 - Le schéma de `PalWorldSettings.ini` couvre ~18 clés ; les autres passent par l'onglet « Avancé ».
 
 **v0.2** — graphiques historiques CPU/RAM, logs du serveur, planification de redémarrages avec annonces in-game, mise à jour via SteamCMD.
