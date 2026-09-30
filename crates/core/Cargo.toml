@@ -1,0 +1,17 @@
+[package]
+name = "palmanager-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Framework-agnostic logic for the Palworld Server Manager (no Tauri dependency)"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+tokio = { version = "1", features = ["process", "time", "fs", "sync", "rt", "macros"] }
+sysinfo = "0.30"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+zip = { version = "0.6", default-features = false, features = ["deflate"] }
+walkdir = "2"
+chrono = { version = "0.4", features = ["serde"] }

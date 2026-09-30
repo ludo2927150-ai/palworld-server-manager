@@ -1,0 +1,45 @@
+import { useCallback, useEffect, useState } from "react";
+import { api, onSnapshot } from "./lib/api";
+import type { Snapshot } from "./lib/types";
+import Dashboard from "./pages/Dashboard";
+import Players from "./pages/Players";
+import Config from "./pages/Config";
+import Backups from "./pages/Backups";
+import Settings from "./pages/Settings";
+
+const TABS = ["Tableau de bord", "Joueurs", "Configuration", "Sauvegardes", "Application"] as const;
+type Tab = (typeof TABS)[number];
+
+export default function App() {
+  const [tab, setTab] = useState<Tab>("Tableau de bord");
+  const [snap, setSnap] = useState<Snapshot | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const notify = useCallback((m: string) => { setToast(m); setTimeout(() => setToast(null), 4000); }, []);
+
+  useEffect(() => {
+    api.snapshot().then(setSnap).catch(() => {});
+    let un: (() => void) | undefined;
+    let dead = false;
+    onSnapshot(setSnap).then((f) => (dead ? f() : (un = f)));
+    return () => { dead = true; un?.(); };
+  }, []);
+
+  return (
+    <div className="flex h-screen">
+      <nav className="w-56 shrink-0 border-r border-slate-800 p-3">
+        <h1 className="mb-4 px-2 text-lg font-bold text-pal-500">Palworld Manager</h1>
+        {TABS.map((t) => (
+          <button key={t} onClick={() => setTab(t)} className={`mb-1 block w-full rounded-lg px-3 py-2 text-left text-sm ${t === tab ? "bg-slate-800" : "hover:bg-slate-900"}`}>{t}</button>
+        ))}
+      </nav>
+      <main className="flex-1 overflow-y-auto p-6">
+        {tab === "Tableau de bord" && <Dashboard snap={snap} notify={notify} />}
+        {tab === "Joueurs" && <Players snap={snap} notify={notify} />}
+        {tab === "Configuration" && <Config notify={notify} />}
+        {tab === "Sauvegardes" && <Backups notify={notify} />}
+        {tab === "Application" && <Settings notify={notify} />}
+      </main>
+      {toast && <div className="fixed bottom-4 right-4 rounded-lg bg-slate-800 px-4 py-2 text-sm shadow-lg" role="status">{toast}</div>}
+    </div>
+  );
+}

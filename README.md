@@ -1,2 +1,34 @@
-# palworld-server-manager
-Creation serveur palworld
+# Palworld Server Manager
+
+Application desktop Windows (Tauri 2 + React + Tailwind) pour piloter un serveur dédié Palworld.
+
+| Fonction | État |
+|---|---|
+| Démarrer / arrêter (propre via API REST) / redémarrer `PalServer.exe` | scaffold fonctionnel |
+| Éditeur graphique de `PalWorldSettings.ini` (aller-retour fidèle) | scaffold fonctionnel |
+| Monitoring CPU / RAM / joueurs / FPS | scaffold fonctionnel |
+| Backups ZIP automatiques + rotation + restauration | scaffold fonctionnel (testé) |
+| Alertes Discord + push mobile (ntfy) : crash, mémoire, connexions | scaffold fonctionnel (moteur testé) |
+
+## Démarrage rapide
+
+Prérequis : Node 20+, Rust stable, [prérequis Tauri pour Windows](https://tauri.app/start/prerequisites/) (WebView2, MSVC).
+
+```bash
+npm install
+npm run tauri icon path/to/logo.png   # génère src-tauri/icons/ (requis pour le bundle)
+npm run tauri dev                      # app complète
+npm run dev                            # UI seule dans un navigateur, avec données factices
+cargo test -p palmanager-core          # tests de la logique métier
+npm run tauri build                    # installeur NSIS/MSI
+```
+
+Côté serveur Palworld, activer l'API REST dans `PalWorldSettings.ini` :
+`RESTAPIEnabled=True`, `RESTAPIPort=8212`, et définir `AdminPassword` (à recopier dans l'onglet « Application »).
+Ne pas exposer ce port sur Internet.
+
+## Documentation
+
+- [Architecture](docs/ARCHITECTURE.md)
+- [Feuille de route](docs/ROADMAP.md)
+- [Contribuer](CONTRIBUTING.md)
