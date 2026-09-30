@@ -2,8 +2,8 @@
 //! redémarrage auto après crash. Émet l'événement `snapshot` vers le frontend à chaque tick.
 
 use crate::state::AppState;
-use palmanager_core::{alerts, backup, rest::RestClient, schedule::Action, settings::AppSettings};
-use std::{sync::atomic::Ordering, time::{Duration, Instant}};
+use palmanager_core::{alerts, backup, history::{PlayerEvent, Sample}, rest::RestClient, schedule::Action, settings::AppSettings};
+use std::{collections::HashSet, sync::atomic::Ordering, time::{Duration, Instant}};
 use tauri::{AppHandle, Emitter, Manager};
 
 /// Sauvegarde puis redémarre proprement (save REST → ZIP → arrêt → démarrage).
@@ -23,6 +23,8 @@ async fn maintenance_restart(st: &AppState, s: &AppSettings) {
 pub fn spawn(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let mut last_backup = Instant::now();
+        let mut last_sample = 0i64;
+        let mut known: HashSet<String> = HashSet::new();
         let mut tick = tokio::time::interval(Duration::from_secs(5));
         loop {
             tick.tick().await;
@@ -69,6 +71,19 @@ pub fn spawn(app: AppHandle) {
                     let _ = backup::rotate(&s.backup.destination, s.backup.retention);
                 }
                 last_backup = Instant::now();
+            }
+
+            // Historique : un échantillon toutes les 30 s + événements de connexion.
+            let ts = chrono::Utc::now().timestamp();
+            if snap.running && ts - last_sample >= 30 {
+                let _ = st.history.add_sample(&Sample::from_snapshot(ts, &snap));
+                last_sample = ts;
+            }
+            let now: HashSet<String> = snap.players.iter().map(|p| p.name.clone()).collect();
+            if !snap.running || snap.metrics.is_some() { // ignore les instantanés où l'API REST n'a pas répondu
+                for n in now.difference(&known) { let _ = st.history.add_event(&PlayerEvent { t: ts, name: n.clone(), joined: true }); }
+                for n in known.difference(&now) { let _ = st.history.add_event(&PlayerEvent { t: ts, name: n.clone(), joined: false }); }
+                known = now;
             }
 
             *st.last_snapshot.write().await = snap.clone();

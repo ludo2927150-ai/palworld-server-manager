@@ -1,7 +1,7 @@
 //! Commandes IPC appelées par le frontend (`invoke`). Fines : la logique vit dans `palmanager-core`.
 
 use crate::state::AppState;
-use palmanager_core::{alerts, backup::{self, BackupInfo}, ini::{self, Options}, monitor::Snapshot, rest::RestClient, settings::AppSettings, steamcmd, Error, Result};
+use palmanager_core::{alerts, backup::{self, BackupInfo}, history::{self, Sample, Session}, logs::{self, LogChunk}, setup::{self, Check}, ini::{self, Options}, monitor::Snapshot, rest::RestClient, settings::AppSettings, steamcmd, Error, Result};
 use std::{sync::atomic::Ordering, time::Duration};
 use tauri::State;
 
@@ -127,4 +127,40 @@ pub async fn update_server(st: S<'_>) -> Result<String> {
     }.await;
     st.maintenance.store(false, Ordering::SeqCst);
     res
+}
+
+#[tauri::command]
+pub async fn get_history(st: S<'_>, hours: i64) -> Result<Vec<Sample>> {
+    let since = chrono::Utc::now().timestamp() - hours.clamp(1, 168) * 3600;
+    Ok(st.history.samples_since(since, 600))
+}
+
+#[tauri::command]
+pub async fn get_sessions(st: S<'_>, days: i64) -> Result<Vec<Session>> {
+    let since = chrono::Utc::now().timestamp() - days.clamp(1, 30) * 86_400;
+    let mut v = history::sessions(&st.history.events_since(since));
+    v.reverse(); // plus récentes d'abord
+    Ok(v)
+}
+
+#[tauri::command]
+pub async fn read_logs(st: S<'_>, offset: Option<u64>) -> Result<LogChunk> {
+    let path = st.settings.read().await.server_dir.join("Pal/Saved/Logs/Pal.log");
+    logs::read_from(&path, offset)
+}
+
+#[tauri::command]
+pub async fn diagnose(st: S<'_>) -> Result<Vec<Check>> {
+    let s = st.settings.read().await.clone();
+    Ok(setup::diagnose(&s).await)
+}
+
+/// Active l'API REST dans le .ini et aligne les paramètres de l'app. Le serveur doit être redémarré ensuite.
+#[tauri::command]
+pub async fn fix_rest(st: S<'_>, admin_password: String) -> Result<()> {
+    let s = st.settings.read().await.clone();
+    let fixed = setup::fix_rest(&s, &admin_password)?;
+    fixed.save(&st.settings_path)?;
+    *st.settings.write().await = fixed;
+    Ok(())
 }

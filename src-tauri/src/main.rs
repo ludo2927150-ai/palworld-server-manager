@@ -21,7 +21,8 @@ fn main() {
             commands::backup_now, commands::list_backups, commands::restore_backup,
             commands::test_alert,
             commands::announce, commands::kick_player, commands::ban_player, commands::unban_player,
-            commands::update_server,
+            commands::update_server, commands::get_history, commands::get_sessions, commands::read_logs,
+            commands::diagnose, commands::fix_rest,
         ])
         .run(tauri::generate_context!())
         .expect("erreur au lancement de Tauri");

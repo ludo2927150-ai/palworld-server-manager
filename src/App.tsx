@@ -6,8 +6,11 @@ import Players from "./pages/Players";
 import Config from "./pages/Config";
 import Backups from "./pages/Backups";
 import Settings from "./pages/Settings";
+import History from "./pages/History";
+import Logs from "./pages/Logs";
+import Diagnostic from "./pages/Diagnostic";
 
-const TABS = ["Tableau de bord", "Joueurs", "Configuration", "Sauvegardes", "Application"] as const;
+const TABS = ["Tableau de bord", "Historique", "Joueurs", "Configuration", "Journal", "Sauvegardes", "Diagnostic", "Application"] as const;
 type Tab = (typeof TABS)[number];
 
 export default function App() {
@@ -38,8 +41,11 @@ export default function App() {
           <button key={t} onClick={() => setTab(t)} className={`mb-1 block w-full rounded-lg px-3 py-2 text-left text-sm ${t === tab ? "bg-slate-800" : "hover:bg-slate-900"}`}>{t}</button>
         ))}
       </nav>
-      <main className="flex-1 overflow-y-auto p-6">
+      <main className="min-h-0 flex-1 overflow-y-auto p-6">
         {tab === "Tableau de bord" && <Dashboard snap={snap} notify={notify} />}
+        {tab === "Historique" && <History notify={notify} />}
+        {tab === "Journal" && <Logs notify={notify} />}
+        {tab === "Diagnostic" && <Diagnostic notify={notify} />}
         {tab === "Joueurs" && <Players snap={snap} notify={notify} />}
         {tab === "Configuration" && <Config notify={notify} />}
         {tab === "Sauvegardes" && <Backups notify={notify} />}

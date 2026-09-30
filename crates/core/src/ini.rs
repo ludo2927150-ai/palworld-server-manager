@@ -56,6 +56,18 @@ pub fn parse(content: &str) -> Result<Options> {
     Ok(out)
 }
 
+/// Modifie ou ajoute une option (`quoted` n'est utilisé qu'à l'ajout).
+pub fn set(options: &mut Options, key: &str, value: &str, quoted: bool) {
+    match options.iter_mut().find(|o| o.key == key) {
+        Some(o) => o.value = value.to_string(),
+        None => options.push(Opt { key: key.into(), value: value.into(), quoted }),
+    }
+}
+
+pub fn get<'a>(options: &'a Options, key: &str) -> Option<&'a str> {
+    options.iter().find(|o| o.key == key).map(|o| o.value.as_str())
+}
+
 pub fn serialize(options: &Options) -> String {
     let body = options
         .iter()
@@ -86,6 +98,16 @@ mod tests {
         let out = serialize(&o);
         assert!(out.contains("ServerName=\"Mon, serveur\",bIsPvP=False"));
         assert_eq!(parse(&out).unwrap(), o);
+    }
+
+    #[test]
+    fn set_updates_or_appends() {
+        let mut o = parse(SAMPLE).unwrap();
+        set(&mut o, "ExpRate", "2.000000", false);
+        set(&mut o, "RESTAPIEnabled", "True", false);
+        assert_eq!(get(&o, "ExpRate"), Some("2.000000"));
+        assert_eq!(get(&o, "RESTAPIEnabled"), Some("True"));
+        assert_eq!(get(&o, "Nope"), None);
     }
 
     #[test]

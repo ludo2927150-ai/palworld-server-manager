@@ -4,12 +4,15 @@
 pub mod alerts;
 pub mod backup;
 pub mod error;
+pub mod history;
 pub mod ini;
+pub mod logs;
 pub mod monitor;
 pub mod rest;
 pub mod schedule;
 pub mod server;
 pub mod settings;
+pub mod setup;
 pub mod steamcmd;
 
 pub use error::{Error, Result};

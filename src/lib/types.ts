@@ -18,3 +18,7 @@ export interface AppSettings {
     on_player_leave: boolean; memory_threshold_percent: number | null; cooldown_secs: number;
   };
 }
+export interface Sample { t: number; cpu: number; mem_percent: number; players: number; fps: number }
+export interface Session { name: string; start: number; end: number | null }
+export interface LogChunk { lines: string[]; offset: number }
+export interface Check { id: string; label: string; ok: boolean; detail: string }

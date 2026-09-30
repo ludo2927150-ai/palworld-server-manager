@@ -12,4 +12,5 @@
 **v0.3** — Credential Manager, icône de zone de notification (tray), démarrage avec Windows, restauration guidée avec arrêt/relance automatiques.
 
 **Lot 1 (fait)** — redémarrages planifiés + annonces, seuil RAM, SteamCMD, adoption par nom de processus, ban/unban.
-**Lot 2 (à faire)** — historique/graphiques, logs en direct, schéma de config complet, assistant de premier lancement.
+**Lot 2 (fait)** — historique/graphiques, sessions, journal en direct, schéma de config ~90 clés + préréglages/diff/import-export, diagnostic de premier lancement.
+**Lot 3 (idée)** — Credential Manager, icône de zone de notification, démarrage avec Windows, backups vers un 2ᵉ emplacement, résumé quotidien Discord, i18n FR/EN.
