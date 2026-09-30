@@ -1,4 +1,4 @@
-use palmanager_core::{alerts::AlertEngine, monitor::{Monitor, Snapshot}, server::ServerController, settings::AppSettings};
+use palmanager_core::{alerts::AlertEngine, schedule::Scheduler, monitor::{Monitor, Snapshot}, server::ServerController, settings::AppSettings};
 use std::{path::PathBuf, sync::atomic::AtomicBool};
 use tauri::{AppHandle, Manager};
 use tokio::sync::{Mutex, RwLock};
@@ -9,6 +9,9 @@ pub struct AppState {
     pub server: ServerController,
     pub monitor: Mutex<Monitor>,
     pub alerts: Mutex<AlertEngine>,
+    pub scheduler: Mutex<Scheduler>,
+    /// Verrou : un seul redémarrage/mise à jour de maintenance à la fois.
+    pub maintenance: AtomicBool,
     pub last_snapshot: RwLock<Snapshot>,
     /// Vrai entre une demande d'arrêt utilisateur et l'arrêt effectif (évite une fausse alerte de crash).
     pub expected_stop: AtomicBool,
@@ -23,6 +26,8 @@ impl AppState {
             server: ServerController::new(),
             monitor: Mutex::new(Monitor::new()),
             alerts: Mutex::new(AlertEngine::new()),
+            scheduler: Mutex::new(Scheduler::new()),
+            maintenance: AtomicBool::new(false),
             last_snapshot: RwLock::new(Snapshot::default()),
             expected_stop: AtomicBool::new(false),
         })

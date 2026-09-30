@@ -5,9 +5,11 @@
 **Limites connues à traiter en priorité**
 - Compilation de `src-tauri` non validée dans l'environnement de génération (pas de WebView Linux) : première tâche = `npm run tauri dev` sur Windows et corriger les éventuelles erreurs.
 - Icônes à générer (`npm run tauri icon`).
-- Un serveur lancé avant l'app n'est pas « possédé » (le monitor le voit, mais start/stop ne le pilotent pas) → adopter le processus existant par nom.
 - Le schéma de `PalWorldSettings.ini` couvre ~18 clés ; les autres passent par l'onglet « Avancé ».
 
 **v0.2** — graphiques historiques CPU/RAM, logs du serveur, planification de redémarrages avec annonces in-game, mise à jour via SteamCMD.
 
 **v0.3** — Credential Manager, icône de zone de notification (tray), démarrage avec Windows, restauration guidée avec arrêt/relance automatiques.
+
+**Lot 1 (fait)** — redémarrages planifiés + annonces, seuil RAM, SteamCMD, adoption par nom de processus, ban/unban.
+**Lot 2 (à faire)** — historique/graphiques, logs en direct, schéma de config complet, assistant de premier lancement.

@@ -1,7 +1,7 @@
 //! Commandes IPC appelées par le frontend (`invoke`). Fines : la logique vit dans `palmanager-core`.
 
 use crate::state::AppState;
-use palmanager_core::{alerts, backup::{self, BackupInfo}, ini::{self, Options}, monitor::Snapshot, rest::RestClient, settings::AppSettings, Error, Result};
+use palmanager_core::{alerts, backup::{self, BackupInfo}, ini::{self, Options}, monitor::Snapshot, rest::RestClient, settings::AppSettings, steamcmd, Error, Result};
 use std::{sync::atomic::Ordering, time::Duration};
 use tauri::State;
 
@@ -95,4 +95,36 @@ pub async fn announce(st: S<'_>, message: String) -> Result<()> {
 #[tauri::command]
 pub async fn kick_player(st: S<'_>, user_id: String) -> Result<()> {
     RestClient::new(&st.settings.read().await.rest)?.kick(&user_id, "Expulsé par l'administrateur").await
+}
+
+#[tauri::command]
+pub async fn ban_player(st: S<'_>, user_id: String) -> Result<()> {
+    RestClient::new(&st.settings.read().await.rest)?.ban(&user_id, "Banni par l'administrateur").await
+}
+
+#[tauri::command]
+pub async fn unban_player(st: S<'_>, user_id: String) -> Result<()> {
+    RestClient::new(&st.settings.read().await.rest)?.unban(&user_id).await
+}
+
+/// Arrête le serveur, met à jour via SteamCMD, puis relance s'il tournait. Renvoie la fin du log SteamCMD.
+#[tauri::command]
+pub async fn update_server(st: S<'_>) -> Result<String> {
+    if st.maintenance.swap(true, Ordering::SeqCst) { return Err(Error::Other("une maintenance est déjà en cours".into())); }
+    let s = st.settings.read().await.clone();
+    let was_running = st.server.is_running().await;
+    let res = async {
+        if was_running {
+            if let Ok(api) = RestClient::new(&s.rest) { let _ = api.save().await; }
+            let _ = backup::create(&s.save_dir(), &s.backup.destination);
+            st.expected_stop.store(true, Ordering::SeqCst);
+            st.server.stop(&s, Duration::from_secs(60)).await?;
+        }
+        let out = steamcmd::update(&s.steamcmd_path, &s.server_dir).await;
+        st.expected_stop.store(false, Ordering::SeqCst);
+        if was_running { st.server.start(&s).await?; }
+        out
+    }.await;
+    st.maintenance.store(false, Ordering::SeqCst);
+    res
 }

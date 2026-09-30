@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, onSnapshot } from "./lib/api";
+import { api, inTauri, onSnapshot } from "./lib/api";
 import type { Snapshot } from "./lib/types";
 import Dashboard from "./pages/Dashboard";
 import Players from "./pages/Players";
@@ -25,7 +25,13 @@ export default function App() {
   }, []);
 
   return (
-    <div className="flex h-screen">
+    <div className="flex h-screen flex-col">
+      {!inTauri && (
+        <div className="bg-amber-500 px-4 py-1.5 text-center text-sm font-medium text-black" role="alert">
+          MODE DÉMO — données fictives affichées dans le navigateur. Lancez « npm run tauri dev » (ou l'installeur) pour piloter un vrai serveur.
+        </div>
+      )}
+      <div className="flex min-h-0 flex-1">
       <nav className="w-56 shrink-0 border-r border-slate-800 p-3">
         <h1 className="mb-4 px-2 text-lg font-bold text-pal-500">Palworld Manager</h1>
         {TABS.map((t) => (
@@ -39,6 +45,7 @@ export default function App() {
         {tab === "Sauvegardes" && <Backups notify={notify} />}
         {tab === "Application" && <Settings notify={notify} />}
       </main>
+      </div>
       {toast && <div className="fixed bottom-4 right-4 rounded-lg bg-slate-800 px-4 py-2 text-sm shadow-lg" role="status">{toast}</div>}
     </div>
   );

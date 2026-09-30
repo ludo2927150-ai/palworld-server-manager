@@ -1,8 +1,26 @@
-//! Cycle de vie de `PalServer.exe`.
+//! Cycle de vie de `PalServer.exe`. Le serveur est identifié par nom de processus : `PalServer.exe`
+//! n'est qu'un lanceur qui engendre `PalServer-Win64-Shipping-Cmd.exe`, et un serveur lancé avant
+//! l'application (ou en dehors d'elle) est ainsi « adopté » automatiquement.
 
 use crate::{rest::RestClient, settings::AppSettings, Error, Result};
 use std::time::Duration;
+use sysinfo::System;
 use tokio::{process::{Child, Command}, sync::Mutex};
+
+/// PID de tous les processus du serveur (lanceur + jeu).
+pub fn find_server_pids() -> Vec<u32> {
+    let mut sys = System::new();
+    sys.refresh_processes();
+    sys.processes().iter()
+        .filter(|(_, p)| p.name().to_ascii_lowercase().starts_with("palserver"))
+        .map(|(pid, _)| pid.as_u32()).collect()
+}
+
+fn kill_all() {
+    let mut sys = System::new();
+    sys.refresh_processes();
+    for p in sys.processes().values().filter(|p| p.name().to_ascii_lowercase().starts_with("palserver")) { p.kill(); }
+}
 
 #[derive(Default)]
 pub struct ServerController {
@@ -12,25 +30,24 @@ pub struct ServerController {
 impl ServerController {
     pub fn new() -> Self { Self::default() }
 
-    /// `true` si le processus lancé par nous tourne encore.
     pub async fn is_running(&self) -> bool {
         let mut g = self.child.lock().await;
-        match g.as_mut().map(|c| c.try_wait()) {
-            Some(Ok(None)) => true,
-            Some(_) => { *g = None; false }
-            None => false,
+        if let Some(c) = g.as_mut() {
+            if !matches!(c.try_wait(), Ok(Some(_))) { return true; }
+            *g = None;
         }
+        !find_server_pids().is_empty()
     }
 
     pub fn pid(&self) -> Option<u32> {
-        self.child.try_lock().ok().and_then(|g| g.as_ref().and_then(|c| c.id()))
+        self.child.try_lock().ok().and_then(|g| g.as_ref().and_then(|c| c.id())).or_else(|| find_server_pids().first().copied())
     }
 
     pub async fn start(&self, s: &AppSettings) -> Result<()> {
         if self.is_running().await { return Err(Error::Other("le serveur tourne déjà".into())); }
         let exe = s.exe_path();
         if !exe.exists() { return Err(Error::Other(format!("introuvable : {}", exe.display()))); }
-        let child = Command::new(exe).args(&s.launch_args).current_dir(&s.server_dir).kill_on_drop(false).spawn()?;
+        let child = Command::new(exe).args(&s.launch_args).current_dir(&s.server_dir).spawn()?;
         *self.child.lock().await = Some(child);
         Ok(())
     }
@@ -46,7 +63,8 @@ impl ServerController {
             if !self.is_running().await { return Ok(()); }
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
-        if let Some(mut c) = self.child.lock().await.take() { c.kill().await?; }
+        kill_all();
+        *self.child.lock().await = None;
         Ok(())
     }
 

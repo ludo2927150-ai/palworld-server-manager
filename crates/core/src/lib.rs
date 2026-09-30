@@ -7,7 +7,9 @@ pub mod error;
 pub mod ini;
 pub mod monitor;
 pub mod rest;
+pub mod schedule;
 pub mod server;
 pub mod settings;
+pub mod steamcmd;
 
 pub use error::{Error, Result};

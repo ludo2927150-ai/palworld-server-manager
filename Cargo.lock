@@ -2221,6 +2221,7 @@ dependencies = [
 name = "palworld-server-manager"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "palmanager-core",
  "serde",
  "serde_json",

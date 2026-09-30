@@ -71,6 +71,7 @@ impl RestClient {
     pub async fn kick(&self, user_id: &str, message: &str) -> Result<()> {
         self.post("kick", serde_json::json!({ "userid": user_id, "message": message })).await
     }
+    pub async fn unban(&self, user_id: &str) -> Result<()> { self.post("unban", serde_json::json!({ "userid": user_id })).await }
     pub async fn ban(&self, user_id: &str, message: &str) -> Result<()> {
         self.post("ban", serde_json::json!({ "userid": user_id, "message": message })).await
     }

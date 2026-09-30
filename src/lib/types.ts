@@ -8,7 +8,9 @@ export interface Snapshot {
 export interface Opt { key: string; value: string; quoted: boolean }
 export interface BackupInfo { file_name: string; path: string; size_bytes: number; created: string }
 export interface AppSettings {
-  server_dir: string; launch_args: string[]; auto_restart: boolean;
+  server_dir: string; steamcmd_path: string;
+  schedule: { enabled: boolean; times: string[]; announce_minutes: number[]; memory_restart_percent: number | null };
+  launch_args: string[]; auto_restart: boolean;
   rest: { host: string; port: number; admin_password: string };
   backup: { enabled: boolean; interval_minutes: number; retention: number; destination: string };
   alerts: {

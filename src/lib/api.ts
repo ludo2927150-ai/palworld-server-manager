@@ -2,7 +2,7 @@
 import type { AppSettings, BackupInfo, Opt, Snapshot } from "./types";
 import { mock } from "./mock";
 
-const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+export const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
 async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (!inTauri) return mock<T>(cmd, args);
@@ -32,6 +32,9 @@ export const api = {
   listBackups: () => call<BackupInfo[]>("list_backups"),
   restoreBackup: (path: string) => call<void>("restore_backup", { path }),
   testAlert: () => call<void>("test_alert"),
+  ban: (userId: string) => call<void>("ban_player", { userId }),
+  unban: (userId: string) => call<void>("unban_player", { userId }),
+  updateServer: () => call<string>("update_server"),
   announce: (message: string) => call<void>("announce", { message }),
   kick: (userId: string) => call<void>("kick_player", { userId }),
 };

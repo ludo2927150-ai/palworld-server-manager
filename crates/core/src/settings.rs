@@ -12,6 +12,9 @@ pub struct AppSettings {
     pub rest: RestSettings,
     pub backup: BackupSettings,
     pub alerts: AlertSettings,
+    pub schedule: ScheduleSettings,
+    /// Chemin de `steamcmd.exe` (installation et mises à jour du serveur).
+    pub steamcmd_path: PathBuf,
     /// Relance automatique après un crash.
     pub auto_restart: bool,
 }
@@ -35,6 +38,18 @@ pub struct BackupSettings {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+pub struct ScheduleSettings {
+    pub enabled: bool,
+    /// Heures de redémarrage quotidien, format `HH:MM` (heure locale).
+    pub times: Vec<String>,
+    /// Annonces en jeu, en minutes avant le redémarrage.
+    pub announce_minutes: Vec<u32>,
+    /// Redémarre (avec préavis d'1 minute) si la RAM du serveur dépasse ce pourcentage.
+    pub memory_restart_percent: Option<f32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct AlertSettings {
     pub discord_webhook: Option<String>,
     /// Topic ntfy.sh (push mobile) : https://ntfy.sh/<topic>
@@ -54,6 +69,8 @@ impl Default for AppSettings {
             rest: RestSettings::default(),
             backup: BackupSettings::default(),
             alerts: AlertSettings::default(),
+            schedule: ScheduleSettings::default(),
+            steamcmd_path: PathBuf::from("steamcmd.exe"),
             auto_restart: true,
         }
     }
@@ -64,6 +81,11 @@ impl Default for RestSettings {
 impl Default for BackupSettings {
     fn default() -> Self {
         Self { enabled: true, interval_minutes: 30, retention: 20, destination: PathBuf::from("backups") }
+    }
+}
+impl Default for ScheduleSettings {
+    fn default() -> Self {
+        Self { enabled: false, times: vec!["04:00".into()], announce_minutes: vec![15, 5, 1], memory_restart_percent: None }
     }
 }
 impl Default for AlertSettings {

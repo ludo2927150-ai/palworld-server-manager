@@ -20,7 +20,8 @@ fn main() {
             commands::read_world_settings, commands::write_world_settings,
             commands::backup_now, commands::list_backups, commands::restore_backup,
             commands::test_alert,
-            commands::announce, commands::kick_player,
+            commands::announce, commands::kick_player, commands::ban_player, commands::unban_player,
+            commands::update_server,
         ])
         .run(tauri::generate_context!())
         .expect("erreur au lancement de Tauri");

@@ -18,6 +18,7 @@ export default function Dashboard({ snap, notify }: { snap: Snapshot | null; not
         <div className="ml-auto flex gap-2">
           <button className="btn-primary" disabled={busy || s?.running} onClick={() => run(api.start)}>Démarrer</button>
           <button className="btn" disabled={busy || !s?.running} onClick={() => run(api.restart)}>Redémarrer</button>
+          <button className="btn" disabled={busy} onClick={() => confirm("Mettre à jour via SteamCMD ? Le serveur sera arrêté puis relancé.") && run(async () => notify(await api.updateServer()))}>Mettre à jour</button>
           <button className="btn-danger" disabled={busy || !s?.running} onClick={() => run(api.stop)}>Arrêter</button>
         </div>
       </div>
