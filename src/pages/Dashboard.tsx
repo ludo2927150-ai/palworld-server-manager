@@ -2,6 +2,7 @@ import { useState } from "react";
 import { api } from "../lib/api";
 import type { Snapshot } from "../lib/types";
 import { Meter, Stat, gb } from "../components/ui";
+import LogViewer from "../components/LogViewer";
 
 export default function Dashboard({ snap, notify }: { snap: Snapshot | null; notify: (m: string) => void }) {
   const [busy, setBusy] = useState(false);
@@ -32,6 +33,10 @@ export default function Dashboard({ snap, notify }: { snap: Snapshot | null; not
         <Stat label="Joueurs" value={`${s?.players.length ?? 0} / ${s?.metrics?.maxplayernum ?? "–"}`} />
         <Stat label="FPS serveur" value={s?.metrics?.serverfps ?? "–"} sub={s?.metrics ? `Jour ${s.metrics.days}` : undefined} />
       </div>
+      <section aria-labelledby="logs-title" className="space-y-2">
+        <h2 id="logs-title" className="font-semibold">Journal du serveur</h2>
+        <LogViewer notify={notify} compact />
+      </section>
     </div>
   );
 }
