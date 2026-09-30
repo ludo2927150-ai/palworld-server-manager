@@ -9,7 +9,9 @@ param(
   [string]$Branch = "claude/ecstatic-ritchie-flor84",
   [int]$IntervalSec = 10
 )
-$ErrorActionPreference = "Stop"
+# "Continue" : PowerShell 5 traiterait sinon la sortie normale de git (stderr) comme une erreur fatale.
+$ErrorActionPreference = "Continue"
+function Git-Quiet { git @args 2>&1 | Out-Null }
 Set-Location (Split-Path -Parent $PSScriptRoot)
 
 git fetch origin $Branch
@@ -24,9 +26,9 @@ try {
   while (-not $app.HasExited) {
     Start-Sleep -Seconds $IntervalSec
     $before = git rev-parse HEAD
-    git fetch origin $Branch 2>$null
+    Git-Quiet fetch origin $Branch
     # Fast-forward uniquement : n'écrase jamais vos modifications locales (échoue sans rien casser).
-    git pull --ff-only origin $Branch 2>$null | Out-Null
+    Git-Quiet pull --ff-only origin $Branch
     $after = git rev-parse HEAD
     if ($before -ne $after) {
       Write-Host ("[{0}] mis à jour : {1}" -f (Get-Date -Format HH:mm:ss), (git log -1 --format=%s)) -ForegroundColor Yellow
