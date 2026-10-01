@@ -8,6 +8,7 @@
 <style>
   :root { --bg:#020617; --card:#0f172a; --line:#1e293b; --text:#f1f5f9; --mute:#94a3b8; --pal:#14b8a6; --bad:#ef4444; --warn:#f59e0b; --ok:#34d399; }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   body { margin:0; background:var(--bg); color:var(--text); font:16px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif; padding:env(safe-area-inset-top) 12px 40px; }
   h1 { font-size:18px; margin:14px 0 10px; display:flex; align-items:center; gap:8px; }
   h2 { font-size:14px; margin:0 0 8px; color:var(--mute); text-transform:uppercase; letter-spacing:.05em; }
@@ -48,16 +49,16 @@
 </div>
 
 <main id="app" hidden>
-  <h1><span id="dot" class="dot"></span><span id="state">…</span><button id="logout" style="margin-left:auto;padding:6px 10px;min-height:0;font-size:13px">Déconnexion</button></h1>
+  <h1><span id="dot" class="dot"></span><span id="state">…</span><span id="who" class="mute" style="font-size:13px"></span><button id="logout" style="margin-left:auto;padding:6px 10px;min-height:0;font-size:13px">Déconnexion</button></h1>
 
-  <div class="grid">
+  <div class="grid" id="sec-status">
     <div class="card stat"><h2>CPU</h2><b id="cpu">–</b><div class="bar"><i id="cpubar"></i></div></div>
     <div class="card stat"><h2>Mémoire</h2><b id="mem">–</b><div class="bar"><i id="membar"></i></div></div>
     <div class="card stat"><h2>Joueurs</h2><b id="pl">–</b></div>
     <div class="card stat"><h2>FPS serveur</h2><b id="fps">–</b><span class="mute" id="day"></span></div>
   </div>
 
-  <div class="card">
+  <div class="card" id="sec-control">
     <h2>Contrôle</h2>
     <div class="row">
       <button class="primary" id="b-start">Démarrer</button>
@@ -67,16 +68,16 @@
     <div class="row" style="margin-top:8px"><button id="b-backup">Sauvegarder maintenant</button></div>
   </div>
 
-  <div class="card"><h2>Joueurs connectés</h2><div id="players" class="mute">–</div></div>
+  <div class="card" id="sec-players"><h2>Joueurs connectés</h2><div id="players" class="mute">–</div></div>
 
-  <div class="card">
+  <div class="card" id="sec-say">
     <h2>Annonce en jeu</h2>
     <div class="row"><input id="msg" placeholder="Message à tous les joueurs" style="flex:3"><button id="b-say" style="flex:1">Envoyer</button></div>
   </div>
 
-  <div class="card"><h2>CPU · 6 h</h2><svg id="s-cpu" viewBox="0 0 300 56" preserveAspectRatio="none"><path d=""/></svg></div>
-  <div class="card"><h2>Mémoire · 6 h</h2><svg id="s-mem" viewBox="0 0 300 56" preserveAspectRatio="none"><path d=""/></svg></div>
-  <div class="card"><h2>Journal</h2><div id="logs"></div></div>
+  <div class="card sec-charts"><h2>CPU · 6 h</h2><svg id="s-cpu" viewBox="0 0 300 56" preserveAspectRatio="none"><path d=""/></svg></div>
+  <div class="card sec-charts"><h2>Mémoire · 6 h</h2><svg id="s-mem" viewBox="0 0 300 56" preserveAspectRatio="none"><path d=""/></svg></div>
+  <div class="card" id="sec-logs"><h2>Journal</h2><div id="logs"></div></div>
 </main>
 <div id="toast" role="status"></div>
 
@@ -85,7 +86,8 @@
   "use strict";
   const $ = (id) => document.getElementById(id);
   const KEY = "palmanager.token";
-  let token = null, offset = null, timer = null;
+  let token = null, offset = null, timer = null, me = { perms: [], admin: false, name: "" };
+  const can = (p) => me.admin || me.perms.includes(p);
 
   // Jeton dans l'URL (#token=…) : on l'enregistre puis on l'efface de la barre d'adresse.
   const m = location.hash.match(/token=([0-9a-zA-Z_-]+)/);
@@ -114,7 +116,20 @@
     p.setAttribute("d", data.map((s, i) => (i ? "L" : "M") + (((s.t - t0) / Math.max(1, t1 - t0)) * 300).toFixed(1) + "," + (54 - Math.min(100, s.v) / 100 * 52).toFixed(1)).join(" "));
   }
 
+  function applyPerms() {
+    const show = (id, on) => { const e = $(id); if (e) e.hidden = !on; };
+    show("sec-status", can("status"));
+    show("sec-players", can("status") && can("players"));
+    show("sec-say", can("announce"));
+    show("sec-logs", can("logs"));
+    document.querySelectorAll(".sec-charts").forEach((e) => (e.hidden = !can("charts")));
+    show("b-start", can("start")); show("b-restart", can("restart")); show("b-stop", can("stop")); show("b-backup", can("backup"));
+    show("sec-control", ["start", "restart", "stop", "backup"].some(can));
+    $("who").textContent = me.admin ? "" : "· invité : " + me.name;
+  }
+
   async function refresh() {
+    if (!can("status")) { $("state").textContent = "Accès limité"; $("dot").className = "dot"; return; }
     try {
       const s = await api("snapshot");
       $("dot").className = "dot " + (s.running ? "on" : "off");
@@ -134,10 +149,11 @@
         const n = document.createElement("span"); n.className = "n"; n.textContent = p.name;   // textContent : les pseudos sont non fiables
         const sm = document.createElement("small"); sm.textContent = "niv. " + p.level + " · " + Math.round(p.ping) + " ms";
         const k = document.createElement("button"); k.textContent = "Expulser";
+        k.hidden = !can("kick");
         k.onclick = () => confirm("Expulser " + p.name + " ?") && act(() => api("kick", { method: "POST", body: JSON.stringify({ user_id: p.userId }) }), p.name + " expulsé");
         row.append(n, sm, k); box.append(row);
       });
-      const l = await api("logs" + (offset === null ? "" : "?offset=" + offset));
+      const l = can("logs") ? await api("logs" + (offset === null ? "" : "?offset=" + offset)) : { lines: [], offset: 0 };
       if (offset !== null && l.offset < offset) $("logs").textContent = "";   // fichier tronqué/rotaté
       offset = l.offset;
       if (l.lines.length) {
@@ -150,6 +166,7 @@
   }
 
   async function refreshCharts() {
+    if (!can("charts")) return;
     try {
       const h = await api("history?hours=6");
       spark("s-cpu", h.map((x) => ({ t: x.t, v: x.cpu }))); spark("s-mem", h.map((x) => ({ t: x.t, v: x.mem_percent })));
@@ -158,8 +175,10 @@
 
   async function act(fn, okMsg) { try { await fn(); toast(okMsg); setTimeout(refresh, 1500); } catch (e) { toast(e.message); } }
 
-  function start() {
+  async function start() {
     show(true); offset = null; $("logs").textContent = "";
+    try { me = await api("me"); } catch { return; }   // 401 : api() a déjà ramené à l'écran de connexion
+    applyPerms();
     refresh(); refreshCharts();
     let n = 0;
     timer = setInterval(() => { if (document.hidden) return; refresh(); if (++n % 20 === 0) refreshCharts(); }, 3000);
@@ -167,7 +186,7 @@
 
   $("go").onclick = async () => {
     token = $("tok").value.trim();
-    try { await api("snapshot"); localStorage.setItem(KEY, token); $("loginerr").textContent = ""; start(); }
+    try { await api("me"); localStorage.setItem(KEY, token); $("loginerr").textContent = ""; start(); }
     catch { $("loginerr").textContent = "Jeton incorrect."; }
   };
   $("logout").onclick = logout;

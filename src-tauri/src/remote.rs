@@ -28,25 +28,34 @@ impl Backend for TauriBackend {
     async fn kick(&self, user_id: String) -> Result<()> { commands::kick_player(self.0.state::<AppState>(), user_id).await }
 }
 
-/// (Ré)applique les paramètres d'accès distant : arrête l'écoute en cours puis relance si activé.
+/// (Ré)applique les paramètres d'accès distant. Les clés sont toujours rafraîchies à chaud (invitation créée ou
+/// révoquée = effet immédiat, sans couper les connexions) ; l'écoute n'est relancée que si l'état ou le port change.
 pub async fn apply(app: &AppHandle) {
     let st = app.state::<AppState>();
+    let cfg = st.settings.read().await.remote.clone();
+    st.remote_creds.set(if cfg.enabled { remote::credentials(&cfg) } else { Vec::new() });
+
+    let listening = st.remote.lock().await.is_some();
+    let bound_port = *st.remote_port.lock().await;
+    if cfg.enabled && listening && bound_port == Some(cfg.port) { return; }
+
     if let Some(h) = st.remote.lock().await.take() {
         h.abort();
         let _ = h.await; // attend la libération du port avant de rebinder
     }
+    *st.remote_port.lock().await = None;
     *st.remote_error.lock().await = None;
-    let cfg = st.settings.read().await.remote.clone();
     if !cfg.enabled { return; }
     if cfg.token.len() < 16 {
-        *st.remote_error.lock().await = Some("jeton d'accès trop court".into());
+        *st.remote_error.lock().await = Some("clé d'accès trop courte".into());
         return;
     }
     match remote::bind(cfg.port).await {
         Ok(listener) => {
-            let backend = TauriBackend(app.clone());
-            let h = tauri::async_runtime::spawn(async move { let _ = remote::run(listener, backend, cfg.token).await; });
+            let (backend, creds) = (TauriBackend(app.clone()), st.remote_creds.clone());
+            let h = tauri::async_runtime::spawn(async move { let _ = remote::run(listener, backend, creds).await; });
             *st.remote.lock().await = Some(h);
+            *st.remote_port.lock().await = Some(cfg.port);
         }
         Err(e) => *st.remote_error.lock().await = Some(format!("port {} indisponible : {e}", cfg.port)),
     }

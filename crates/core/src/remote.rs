@@ -6,7 +6,9 @@
 //! configuration du monde, restauration de sauvegarde, mise à jour SteamCMD, bannissement.
 
 use crate::{
-    backup::BackupInfo, history::{Sample, Session}, logs::LogChunk, monitor::Snapshot, Error, Result,
+    backup::BackupInfo, history::{Sample, Session}, logs::LogChunk, monitor::Snapshot,
+    settings::{Perm, RemoteSettings},
+    Error, Result,
 };
 use axum::{
     extract::{Path, Query, Request, State},
@@ -17,8 +19,9 @@ use axum::{
     Json, Router,
 };
 use serde::Deserialize;
-use axum::extract::ConnectInfo;
-use std::{future::Future, net::{IpAddr, SocketAddr}, sync::Arc, time::Duration};
+use axum::extract::{ConnectInfo, Extension};
+use serde::Serialize;
+use std::{collections::HashSet, future::Future, net::{IpAddr, SocketAddr}, sync::{Arc, RwLock}, time::Duration};
 use tokio::net::TcpListener;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,17 +42,84 @@ pub trait Backend: Clone + Send + Sync + 'static {
 type ApiErr = (StatusCode, String);
 fn err(e: Error) -> ApiErr { (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()) }
 
-/// Comparaison en temps constant (évite de révéler le jeton par le temps de réponse).
+/// Comparaison en temps constant (évite de révéler la clé par le temps de réponse).
 fn ct_eq(a: &[u8], b: &[u8]) -> bool {
     a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
-async fn auth(State(token): State<Arc<String>>, req: Request, next: Next) -> Response {
-    let ok = req.headers().get(AUTHORIZATION).and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer ")).is_some_and(|t| ct_eq(t.as_bytes(), token.as_bytes()));
-    if ok { return next.run(req).await; }
-    tokio::time::sleep(Duration::from_millis(300)).await; // ralentit les essais répétés
-    StatusCode::UNAUTHORIZED.into_response()
+fn now_secs() -> i64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
+}
+
+/// Une clé et ce qu'elle autorise. Le propriétaire a tous les droits ; un invité seulement ceux accordés.
+#[derive(Debug, Clone)]
+pub struct Credential {
+    pub token: String,
+    pub name: String,
+    pub admin: bool,
+    pub perms: HashSet<Perm>,
+    pub expires_at: Option<i64>,
+}
+
+impl Credential {
+    fn can(&self, p: Perm) -> bool { self.admin || self.perms.contains(&p) }
+}
+
+/// Clés valides, modifiables à chaud : une invitation créée ou révoquée prend effet immédiatement,
+/// sans redémarrer le serveur ni déconnecter les autres.
+#[derive(Clone, Default)]
+pub struct Credentials(Arc<RwLock<Vec<Credential>>>);
+
+impl Credentials {
+    pub fn new(v: Vec<Credential>) -> Self { Self(Arc::new(RwLock::new(v))) }
+    pub fn set(&self, v: Vec<Credential>) { if let Ok(mut g) = self.0.write() { *g = v; } }
+
+    /// Cherche la clé présentée. Toutes les entrées sont comparées (pas de sortie anticipée) ; une clé expirée est refusée.
+    fn find(&self, presented: &str, now: i64) -> Option<Credential> {
+        let g = self.0.read().ok()?;
+        let mut found: Option<&Credential> = None;
+        for c in g.iter() {
+            if ct_eq(presented.as_bytes(), c.token.as_bytes()) { found = Some(c); }
+        }
+        found.filter(|c| c.expires_at.map_or(true, |e| now < e)).cloned()
+    }
+}
+
+/// Clés issues des réglages : celle du propriétaire (si définie) + les invités.
+pub fn credentials(cfg: &RemoteSettings) -> Vec<Credential> {
+    let mut v = Vec::new();
+    if cfg.token.len() >= 16 {
+        v.push(Credential { token: cfg.token.clone(), name: "Propriétaire".into(), admin: true, perms: Perm::ALL.into_iter().collect(), expires_at: None });
+    }
+    for g in cfg.guests.iter().filter(|g| g.token.len() >= 16) {
+        v.push(Credential { token: g.token.clone(), name: g.name.clone(), admin: false, perms: g.perms.iter().copied().collect(), expires_at: g.expires_at });
+    }
+    v
+}
+
+async fn auth(State(creds): State<Credentials>, mut req: Request, next: Next) -> Response {
+    let found = req.headers().get(AUTHORIZATION).and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer ")).and_then(|t| creds.find(t, now_secs()));
+    match found {
+        Some(c) => { req.extensions_mut().insert(c); next.run(req).await }
+        None => {
+            tokio::time::sleep(Duration::from_millis(300)).await; // ralentit les essais répétés
+            StatusCode::UNAUTHORIZED.into_response()
+        }
+    }
+}
+
+fn need(c: &Credential, p: Perm) -> std::result::Result<(), ApiErr> {
+    if c.can(p) { Ok(()) } else { Err((StatusCode::FORBIDDEN, "droit insuffisant pour cette action".into())) }
+}
+
+#[derive(Serialize)]
+struct Me { name: String, admin: bool, perms: Vec<Perm>, expires_at: Option<i64> }
+
+async fn me(Extension(c): Extension<Credential>) -> Json<Me> {
+    let mut perms: Vec<Perm> = Perm::ALL.into_iter().filter(|p| c.can(*p)).collect();
+    perms.sort_by_key(|p| Perm::ALL.iter().position(|x| x == p));
+    Json(Me { name: c.name, admin: c.admin, perms, expires_at: c.expires_at })
 }
 
 /// Adresses autorisées : boucle locale, réseaux privés, lien local et plage Tailscale (100.64.0.0/10, fd7a:115c:a1e0::/48).
@@ -71,52 +141,65 @@ async fn only_private(ConnectInfo(addr): ConnectInfo<SocketAddr>, req: Request, 
 
 async fn index() -> Html<&'static str> { Html(include_str!("mobile.html")) }
 
-async fn snapshot<B: Backend>(State(b): State<B>) -> Json<Snapshot> { Json(b.snapshot().await) }
+async fn snapshot<B: Backend>(State(b): State<B>, Extension(c): Extension<Credential>) -> std::result::Result<Json<Snapshot>, ApiErr> {
+    need(&c, Perm::Status)?;
+    let mut s = b.snapshot().await;
+    if !c.can(Perm::Players) { s.players.clear(); } // les pseudos ne sont visibles qu'avec le droit « joueurs »
+    Ok(Json(s))
+}
 
-async fn control<B: Backend>(State(b): State<B>, Path(action): Path<String>) -> std::result::Result<StatusCode, ApiErr> {
-    let action = match action.as_str() {
-        "start" => Control::Start, "stop" => Control::Stop, "restart" => Control::Restart,
+async fn control<B: Backend>(State(b): State<B>, Extension(c): Extension<Credential>, Path(action): Path<String>) -> std::result::Result<StatusCode, ApiErr> {
+    let (action, perm) = match action.as_str() {
+        "start" => (Control::Start, Perm::Start), "stop" => (Control::Stop, Perm::Stop), "restart" => (Control::Restart, Perm::Restart),
         _ => return Err((StatusCode::BAD_REQUEST, "action inconnue".into())),
     };
+    need(&c, perm)?;
     b.control(action).await.map_err(err)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
 #[derive(Deserialize)] struct HistoryQ { hours: Option<i64> }
-async fn history<B: Backend>(State(b): State<B>, Query(q): Query<HistoryQ>) -> Json<Vec<Sample>> {
-    Json(b.history(q.hours.unwrap_or(6).clamp(1, 168)).await)
+async fn history<B: Backend>(State(b): State<B>, Extension(c): Extension<Credential>, Query(q): Query<HistoryQ>) -> std::result::Result<Json<Vec<Sample>>, ApiErr> {
+    need(&c, Perm::Charts)?;
+    Ok(Json(b.history(q.hours.unwrap_or(6).clamp(1, 168)).await))
 }
 
 #[derive(Deserialize)] struct SessionsQ { days: Option<i64> }
-async fn sessions<B: Backend>(State(b): State<B>, Query(q): Query<SessionsQ>) -> Json<Vec<Session>> {
-    Json(b.sessions(q.days.unwrap_or(7).clamp(1, 30)).await)
+async fn sessions<B: Backend>(State(b): State<B>, Extension(c): Extension<Credential>, Query(q): Query<SessionsQ>) -> std::result::Result<Json<Vec<Session>>, ApiErr> {
+    need(&c, Perm::Players)?;
+    Ok(Json(b.sessions(q.days.unwrap_or(7).clamp(1, 30)).await))
 }
 
 #[derive(Deserialize)] struct LogsQ { offset: Option<u64> }
-async fn logs<B: Backend>(State(b): State<B>, Query(q): Query<LogsQ>) -> std::result::Result<Json<LogChunk>, ApiErr> {
+async fn logs<B: Backend>(State(b): State<B>, Extension(c): Extension<Credential>, Query(q): Query<LogsQ>) -> std::result::Result<Json<LogChunk>, ApiErr> {
+    need(&c, Perm::Logs)?;
     b.logs(q.offset).await.map(Json).map_err(err)
 }
 
-async fn backup_now<B: Backend>(State(b): State<B>) -> std::result::Result<Json<BackupInfo>, ApiErr> {
+async fn backup_now<B: Backend>(State(b): State<B>, Extension(c): Extension<Credential>) -> std::result::Result<Json<BackupInfo>, ApiErr> {
+    need(&c, Perm::Backup)?;
     b.backup_now().await.map(Json).map_err(err)
 }
 
 #[derive(Deserialize)] struct Msg { message: String }
-async fn announce<B: Backend>(State(b): State<B>, Json(m): Json<Msg>) -> std::result::Result<StatusCode, ApiErr> {
+async fn announce<B: Backend>(State(b): State<B>, Extension(c): Extension<Credential>, Json(m): Json<Msg>) -> std::result::Result<StatusCode, ApiErr> {
+    need(&c, Perm::Announce)?;
     if m.message.trim().is_empty() || m.message.len() > 500 { return Err((StatusCode::BAD_REQUEST, "message invalide".into())); }
     b.announce(m.message).await.map_err(err)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
 #[derive(Deserialize)] struct Kick { user_id: String }
-async fn kick<B: Backend>(State(b): State<B>, Json(k): Json<Kick>) -> std::result::Result<StatusCode, ApiErr> {
+async fn kick<B: Backend>(State(b): State<B>, Extension(c): Extension<Credential>, Json(k): Json<Kick>) -> std::result::Result<StatusCode, ApiErr> {
+    need(&c, Perm::Kick)?;
     b.kick(k.user_id).await.map_err(err)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
 /// La page mobile est publique (elle ne contient aucune donnée) ; toute l'API exige le jeton.
-pub fn router<B: Backend>(backend: B, token: String) -> Router {
+pub fn router<B: Backend>(backend: B, creds: Credentials) -> Router {
     let api = Router::new()
+        .route("/me", get(me))
         .route("/snapshot", get(snapshot::<B>))
         .route("/control/:action", post(control::<B>))
         .route("/history", get(history::<B>))
@@ -125,7 +208,7 @@ pub fn router<B: Backend>(backend: B, token: String) -> Router {
         .route("/backup", post(backup_now::<B>))
         .route("/announce", post(announce::<B>))
         .route("/kick", post(kick::<B>))
-        .layer(middleware::from_fn_with_state(Arc::new(token), auth))
+        .layer(middleware::from_fn_with_state(creds, auth))
         .with_state(backend);
     Router::new().route("/", get(index)).nest("/api", api).layer(middleware::from_fn(only_private))
 }
@@ -135,8 +218,8 @@ pub async fn bind(port: u16) -> std::io::Result<TcpListener> {
     TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], port))).await
 }
 
-pub async fn run<B: Backend>(listener: TcpListener, backend: B, token: String) -> std::io::Result<()> {
-    axum::serve(listener, router(backend, token).into_make_service_with_connect_info::<SocketAddr>()).await
+pub async fn run<B: Backend>(listener: TcpListener, backend: B, creds: Credentials) -> std::io::Result<()> {
+    axum::serve(listener, router(backend, creds).into_make_service_with_connect_info::<SocketAddr>()).await
 }
 
 #[cfg(test)]
@@ -158,11 +241,19 @@ mod tests {
         async fn kick(&self, u: String) -> Result<()> { self.calls.lock().unwrap().push(format!("kick:{u}")); Ok(()) }
     }
 
-    async fn start(fake: Fake) -> String {
+    fn cred(token: &str, name: &str, admin: bool, perms: &[Perm], expires_at: Option<i64>) -> Credential {
+        Credential { token: token.into(), name: name.into(), admin, perms: perms.iter().copied().collect(), expires_at }
+    }
+
+    async fn start_with(fake: Fake, creds: Credentials) -> String {
         let l = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}", l.local_addr().unwrap());
-        tokio::spawn(run(l, fake, "secret-token-1234567".into()));
+        tokio::spawn(run(l, fake, creds));
         base
+    }
+
+    async fn start(fake: Fake) -> String {
+        start_with(fake, Credentials::new(vec![cred("secret-token-1234567", "Propriétaire", true, &Perm::ALL, None)])).await
     }
 
     #[tokio::test]
@@ -196,6 +287,58 @@ mod tests {
             assert_eq!(c.get(format!("{base}/api/{p}")).bearer_auth(t).send().await.unwrap().status(), 404, "{p}");
         }
         assert_eq!(*fake.calls.lock().unwrap(), ["Restart", "announce:salut", "kick:steam_1"]);
+    }
+
+    #[tokio::test]
+    async fn guest_permissions_expiry_and_revocation() {
+        let fake = Fake::default();
+        let creds = Credentials::new(vec![
+            cred("owner-token-1234567890", "Propriétaire", true, &Perm::ALL, None),
+            cred("viewer-token-123456789", "Alice", false, &[Perm::Status], None),
+            cred("mod-token-12345678901", "Bob", false, &[Perm::Status, Perm::Restart, Perm::Players], None),
+            cred("old-token-123456789012", "Expiré", false, &[Perm::Status], Some(1)),
+        ]);
+        let base = start_with(fake.clone(), creds.clone()).await;
+        let c = reqwest::Client::new();
+        let get = |p: &str, t: &str| c.get(format!("{base}{p}")).bearer_auth(t.to_string()).send();
+        let post = |p: &str, t: &str| c.post(format!("{base}{p}")).bearer_auth(t.to_string()).send();
+
+        // /me décrit les droits réels.
+        let me: serde_json::Value = get("/api/me", "viewer-token-123456789").await.unwrap().json().await.unwrap();
+        assert_eq!((me["name"].as_str(), me["admin"].as_bool(), me["perms"].clone()), (Some("Alice"), Some(false), serde_json::json!(["status"])));
+        // Spectateur : voit l'état, rien d'autre.
+        assert_eq!(get("/api/snapshot", "viewer-token-123456789").await.unwrap().status(), 200);
+        assert_eq!(get("/api/logs", "viewer-token-123456789").await.unwrap().status(), 403);
+        assert_eq!(get("/api/history", "viewer-token-123456789").await.unwrap().status(), 403);
+        assert_eq!(get("/api/sessions", "viewer-token-123456789").await.unwrap().status(), 403);
+        assert_eq!(post("/api/control/restart", "viewer-token-123456789").await.unwrap().status(), 403);
+        assert_eq!(post("/api/control/stop", "viewer-token-123456789").await.unwrap().status(), 403);
+        assert_eq!(post("/api/backup", "viewer-token-123456789").await.unwrap().status(), 403);
+        assert_eq!(c.post(format!("{base}/api/kick")).bearer_auth("viewer-token-123456789").json(&serde_json::json!({"user_id":"x"})).send().await.unwrap().status(), 403);
+        // Modérateur : redémarrer oui, arrêter non.
+        assert_eq!(post("/api/control/restart", "mod-token-12345678901").await.unwrap().status(), 204);
+        assert_eq!(post("/api/control/stop", "mod-token-12345678901").await.unwrap().status(), 403);
+        assert_eq!(get("/api/sessions", "mod-token-12345678901").await.unwrap().status(), 200);
+        // Clé expirée ou inconnue : 401.
+        assert_eq!(get("/api/snapshot", "old-token-123456789012").await.unwrap().status(), 401);
+        assert_eq!(get("/api/snapshot", "nimporte-quoi").await.unwrap().status(), 401);
+        // Révocation immédiate, sans redémarrer le serveur.
+        creds.set(vec![cred("owner-token-1234567890", "Propriétaire", true, &Perm::ALL, None)]);
+        assert_eq!(get("/api/snapshot", "viewer-token-123456789").await.unwrap().status(), 401);
+        assert_eq!(get("/api/snapshot", "owner-token-1234567890").await.unwrap().status(), 200);
+        assert_eq!(*fake.calls.lock().unwrap(), ["Restart"]);
+    }
+
+    #[test]
+    fn credentials_from_settings() {
+        let mut cfg = RemoteSettings { token: "t".repeat(32), ..Default::default() };
+        cfg.guests.push(crate::settings::Guest { id: "g1".into(), name: "Ami".into(), token: "g".repeat(32), perms: vec![Perm::Status], expires_at: None, created_at: 0 });
+        cfg.guests.push(crate::settings::Guest { id: "g2".into(), name: "Court".into(), token: "x".into(), perms: vec![Perm::Status], expires_at: None, created_at: 0 }); // clé trop courte : ignorée
+        let v = credentials(&cfg);
+        assert_eq!(v.len(), 2);
+        assert!(v[0].admin && v[0].perms.len() == Perm::ALL.len());
+        assert!(!v[1].admin && v[1].perms.len() == 1);
+        assert!(credentials(&RemoteSettings::default()).is_empty());
     }
 
     #[test]

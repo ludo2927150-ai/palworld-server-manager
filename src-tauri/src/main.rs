@@ -40,7 +40,7 @@ fn main() {
             commands::announce, commands::kick_player, commands::ban_player, commands::unban_player,
             commands::update_server, commands::get_autostart, commands::set_autostart, commands::get_history, commands::get_sessions, commands::read_logs,
             commands::diagnose, commands::fix_rest, commands::network_info, commands::system_info, commands::apply_performance, commands::public_ip,
-            commands::remote_info, commands::regenerate_remote_token,
+            commands::remote_info, commands::regenerate_remote_token, commands::create_guest, commands::revoke_guest,
         ])
         .run(tauri::generate_context!())
         .expect("erreur au lancement de Tauri");

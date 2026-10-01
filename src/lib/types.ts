@@ -9,7 +9,7 @@ export interface Opt { key: string; value: string; quoted: boolean }
 export interface BackupInfo { file_name: string; path: string; size_bytes: number; created: string }
 export interface AppSettings {
   server_dir: string; steamcmd_path: string;
-  remote: { enabled: boolean; port: number; token: string };
+  remote: { enabled: boolean; port: number; token: string; guests: Guest[] };
   performance: PerformanceSettings;
   schedule: { enabled: boolean; rules: ScheduleRule[]; announce_minutes: number[]; memory_restart_percent: number | null };
   launch_args: string[]; auto_restart: boolean; close_to_tray: boolean; start_server_on_launch: boolean;
@@ -32,4 +32,6 @@ export type Priority = "belownormal" | "normal" | "abovenormal" | "high";
 export interface PerformanceSettings { priority: Priority; cpu_cores: number[] | null; memory_limit_gb: number | null; memory_limit_restart: boolean }
 export interface SystemInfo { cpu_cores: number; total_memory_bytes: number }
 export interface RemoteUrl { label: string; url: string }
-export interface RemoteInfo { running: boolean; error: string | null; urls: RemoteUrl[]; tailscale_found: boolean }
+export interface RemoteInfo { running: boolean; error: string | null; urls: RemoteUrl[]; bases: RemoteUrl[]; tailscale_found: boolean }
+export type Perm = "status" | "players" | "logs" | "charts" | "start" | "stop" | "restart" | "backup" | "announce" | "kick";
+export interface Guest { id: string; name: string; token: string; perms: Perm[]; expires_at: number | null; created_at: number }

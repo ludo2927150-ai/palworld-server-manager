@@ -98,12 +98,48 @@ pub struct ScheduleSettings {
 pub struct RemoteSettings {
     pub enabled: bool,
     pub port: u16,
-    /// Jeton secret exigé par l'API (généré automatiquement à l'activation).
+    /// Jeton secret du propriétaire (tous les droits), généré automatiquement à l'activation.
     pub token: String,
+    /// Invitations : une clé par invité, avec des permissions limitées et une date d'expiration optionnelle.
+    pub guests: Vec<Guest>,
+}
+
+/// Droits d'un invité. Volontairement limités : jamais les réglages, la configuration, la restauration ni le bannissement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Perm {
+    /// Voir l'état du serveur (en ligne, CPU, RAM, FPS, nombre de joueurs).
+    Status,
+    /// Voir les pseudos des joueurs connectés et l'historique des sessions.
+    Players,
+    Logs,
+    Charts,
+    Start,
+    Stop,
+    Restart,
+    Backup,
+    Announce,
+    Kick,
+}
+
+impl Perm {
+    pub const ALL: [Perm; 10] = [Perm::Status, Perm::Players, Perm::Logs, Perm::Charts, Perm::Start, Perm::Stop, Perm::Restart, Perm::Backup, Perm::Announce, Perm::Kick];
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Guest {
+    /// Identifiant interne (pour révoquer) ; distinct de la clé.
+    pub id: String,
+    pub name: String,
+    pub token: String,
+    pub perms: Vec<Perm>,
+    /// Secondes Unix ; `None` = n'expire pas.
+    pub expires_at: Option<i64>,
+    pub created_at: i64,
 }
 
 impl Default for RemoteSettings {
-    fn default() -> Self { Self { enabled: false, port: 8765, token: String::new() } }
+    fn default() -> Self { Self { enabled: false, port: 8765, token: String::new(), guests: Vec::new() } }
 }
 
 impl RemoteSettings {

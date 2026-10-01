@@ -58,3 +58,10 @@
 - Accès hors du domicile : Tailscale (réseau privé chiffré) ; aucune redirection de port sur la box.
 - Exposé : état, historique, journal, démarrer/arrêter/redémarrer, sauvegarde, annonce, expulsion. Non exposé : réglages (secrets), configuration du monde, restauration, mise à jour, bannissement.
 - Le routeur est générique sur le trait `Backend`, implémenté par `src-tauri/src/remote.rs` : testable sans Tauri.
+
+### Invités
+
+- `settings.remote.guests` : une clé par invité, avec `perms` (status, players, logs, charts, start, stop, restart, backup, announce, kick) et une expiration optionnelle.
+- `Credentials` (partagé, modifiable à chaud) : une invitation créée ou révoquée prend effet immédiatement, sans relancer l'écoute.
+- Chaque route vérifie le droit requis (403 sinon) ; `snapshot` masque les pseudos sans le droit `players` ; `/api/me` indique à la page mobile ce qu'elle peut afficher.
+- Les clés d'invités sont stockées en clair dans `settings.json` (comme celle du propriétaire) ; migration vers le Credential Manager prévue.

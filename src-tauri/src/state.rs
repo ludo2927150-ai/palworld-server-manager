@@ -13,6 +13,10 @@ pub struct AppState {
     /// Tâche d'écoute de l'accès distant (None = désactivé) et dernière erreur de démarrage.
     pub remote: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
     pub remote_error: Mutex<Option<String>>,
+    /// Clés valides de l'accès distant, partagées avec le serveur mobile (mises à jour à chaud).
+    pub remote_creds: palmanager_core::remote::Credentials,
+    /// Port sur lequel le serveur mobile écoute actuellement (pour ne pas le relancer inutilement).
+    pub remote_port: Mutex<Option<u16>>,
     pub scheduler: Mutex<Scheduler>,
     /// Verrou : un seul redémarrage/mise à jour de maintenance à la fois.
     pub maintenance: AtomicBool,
@@ -39,6 +43,8 @@ impl AppState {
             history,
             remote: Mutex::new(None),
             remote_error: Mutex::new(None),
+            remote_creds: Default::default(),
+            remote_port: Mutex::new(None),
             scheduler: Mutex::new(Scheduler::new()),
             maintenance: AtomicBool::new(false),
             last_snapshot: RwLock::new(Snapshot::default()),

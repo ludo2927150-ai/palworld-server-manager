@@ -31,6 +31,8 @@ pub struct RemoteInfo {
     pub error: Option<String>,
     /// Adresses à ouvrir depuis le téléphone (le jeton est dans le fragment `#token=`, jamais envoyé au réseau).
     pub urls: Vec<RemoteUrl>,
+    /// Mêmes adresses sans clé (`http://ip:port/`) : sert à composer le lien d'un invité avec sa propre clé.
+    pub bases: Vec<RemoteUrl>,
     /// Adresse Tailscale détectée sur ce PC (accès hors de la maison) ; `false` = Tailscale absent ou déconnecté.
     pub tailscale_found: bool,
 }
@@ -40,13 +42,17 @@ pub async fn remote_info(st: S<'_>) -> Result<RemoteInfo> {
     let cfg = st.settings.read().await.remote.clone();
     let tailscale = tokio::task::spawn_blocking(palmanager_core::net::tailscale_ip).await.ok().flatten();
     let lan = palmanager_core::net::lan_ip();
-    let mut urls = Vec::new();
+    let (mut urls, mut bases) = (Vec::new(), Vec::new());
     if cfg.enabled {
-        let mk = |ip: std::net::IpAddr| format!("http://{ip}:{}/#token={}", cfg.port, cfg.token);
-        if let Some(ip) = tailscale { urls.push(RemoteUrl { label: "Partout (Tailscale, 4G ou Wi-Fi)".into(), url: mk(ip) }); }
-        if let Some(ip) = lan { urls.push(RemoteUrl { label: "Chez vous (même Wi-Fi)".into(), url: mk(ip) }); }
+        let mut add = |label: &str, ip: std::net::IpAddr| {
+            let base = format!("http://{ip}:{}/", cfg.port);
+            urls.push(RemoteUrl { label: label.into(), url: format!("{base}#token={}", cfg.token) });
+            bases.push(RemoteUrl { label: label.into(), url: base });
+        };
+        if let Some(ip) = tailscale { add("Partout (Tailscale, 4G ou Wi-Fi)", ip); }
+        if let Some(ip) = lan { add("Chez vous (même Wi-Fi)", ip); }
     }
-    Ok(RemoteInfo { running: st.remote.lock().await.is_some(), error: st.remote_error.lock().await.clone(), urls, tailscale_found: tailscale.is_some() })
+    Ok(RemoteInfo { running: st.remote.lock().await.is_some(), error: st.remote_error.lock().await.clone(), urls, bases, tailscale_found: tailscale.is_some() })
 }
 
 /// Invalide l'ancien jeton (les téléphones déjà connectés devront se reconnecter).
@@ -277,4 +283,41 @@ pub async fn apply_performance(st: S<'_>) -> Result<usize> {
     let p = st.settings.read().await.performance.clone();
     let cores = palmanager_core::monitor::system_info().cpu_cores;
     tokio::task::spawn_blocking(move || palmanager_core::perf::apply(&p, cores)).await.map_err(|e| Error::Other(e.to_string()))?
+}
+
+/// Crée une invitation : clé propre, permissions choisies, durée de validité optionnelle. Effet immédiat.
+#[tauri::command]
+pub async fn create_guest(app: tauri::AppHandle, st: S<'_>, name: String, perms: Vec<palmanager_core::settings::Perm>, hours: Option<u32>) -> Result<palmanager_core::settings::Guest> {
+    let name = name.trim().to_string();
+    if name.is_empty() || name.chars().count() > 40 { return Err(Error::Other("nom invalide (1 à 40 caractères)".into())); }
+    let mut perms = perms;
+    perms.sort_by_key(|p| palmanager_core::settings::Perm::ALL.iter().position(|x| x == p));
+    perms.dedup();
+    if perms.is_empty() { return Err(Error::Other("choisissez au moins une permission".into())); }
+    let now = chrono::Utc::now().timestamp();
+    let guest = palmanager_core::settings::Guest {
+        id: palmanager_core::settings::RemoteSettings::generate_token()?[..12].to_string(),
+        name,
+        token: palmanager_core::settings::RemoteSettings::generate_token()?,
+        perms,
+        expires_at: hours.filter(|h| *h > 0).map(|h| now + i64::from(h) * 3600),
+        created_at: now,
+    };
+    let mut s = st.settings.read().await.clone();
+    s.remote.guests.push(guest.clone());
+    s.save(&st.settings_path)?;
+    *st.settings.write().await = s;
+    crate::remote::apply(&app).await;
+    Ok(guest)
+}
+
+/// Révoque une invitation : sa clé cesse de fonctionner immédiatement.
+#[tauri::command]
+pub async fn revoke_guest(app: tauri::AppHandle, st: S<'_>, id: String) -> Result<()> {
+    let mut s = st.settings.read().await.clone();
+    s.remote.guests.retain(|g| g.id != id);
+    s.save(&st.settings_path)?;
+    *st.settings.write().await = s;
+    crate::remote::apply(&app).await;
+    Ok(())
 }
