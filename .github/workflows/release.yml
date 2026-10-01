@@ -1,0 +1,46 @@
+name: Release
+# Fabrique l'installeur Windows et le publie dans les « Releases ». Déclencheurs :
+#  - un tag `v*` (version officielle) ;
+#  - un commit de la branche de travail dont le message contient « [release] » (version de test numérotée automatiquement) ;
+#  - un lancement manuel (workflow_dispatch).
+on:
+  push:
+    tags: ["v*"]
+    branches: ["claude/ecstatic-ritchie-flor84"]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  windows:
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release]')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: npm ci
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PALMANAGER_BUILD: ${{ startsWith(github.ref, 'refs/tags/') && '' || github.run_number }}
+        with:
+          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v0.1.0-test.{0}', github.run_number) }}
+          releaseCommitish: ${{ github.sha }}
+          releaseName: "Palworld Server Manager ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v0.1.0-test.{0}', github.run_number) }}"
+          releaseBody: |
+            **Version de test.** Installeur Windows 10/11 (64 bits), installation pour l'utilisateur courant (sans droits administrateur).
+
+            ### Installer
+            1. Téléchargez le fichier `…_x64-setup.exe` ci-dessous (section *Assets*).
+            2. Double-cliquez dessus. Windows SmartScreen peut afficher « Windows a protégé votre ordinateur » car le programme n'est pas signé : cliquez sur **Informations complémentaires**, puis **Exécuter quand même**.
+            3. Lancez « Palworld Server Manager » depuis le menu Démarrer, puis ouvrez l'onglet **Diagnostic** et suivez les points en rouge.
+
+            ### Bon à savoir
+            - Les réglages et l'historique sont dans `%APPDATA%\dev.palmanager.app` (conservés lors d'une mise à jour).
+            - Pour désinstaller : Paramètres Windows → Applications.
+            - L'accès depuis le téléphone est désactivé par défaut (onglet **Mobile**).
+          releaseDraft: false
+          prerelease: true
+          args: --bundles nsis

@@ -1,0 +1,10 @@
+node_modules/
+dist/
+target/
+src-tauri/gen/
+*.log
+.DS_Store
+
+# Sauvegardes de monde (ne pas versionner, ne pas déclencher le rechargement de tauri dev)
+backups/
+*.zip

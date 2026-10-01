@@ -1,0 +1,76 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Palette « slate » pilotée par variables : le thème clair inverse l'échelle (50 ↔ 950), tout le reste suit. */
+:root {
+  --s-50: 248 250 252;
+  --s-100: 241 245 249;
+  --s-200: 226 232 240;
+  --s-300: 203 213 225;
+  --s-400: 148 163 184;
+  --s-500: 100 116 139;
+  --s-600: 71 85 105;
+  --s-700: 51 65 85;
+  --s-800: 30 41 59;
+  --s-900: 15 23 42;
+  --s-950: 2 6 23;
+}
+:root.light {
+  --s-50: 2 6 23;
+  --s-100: 15 23 42;
+  --s-200: 30 41 59;
+  --s-300: 51 65 85;
+  --s-400: 71 85 105;
+  --s-500: 100 116 139;
+  --s-600: 148 163 184;
+  --s-700: 203 213 225;
+  --s-800: 226 232 240;
+  --s-900: 241 245 249;
+  --s-950: 248 250 252;
+  color-scheme: light;
+}
+:root:not(.light) { color-scheme: dark; }
+.light .text-emerald-300 { color: rgb(4 120 87); }
+.light .text-amber-300 { color: rgb(180 83 9); }
+.light .text-red-300, .light .text-red-400 { color: rgb(185 28 28); }
+.light .text-emerald-400 { color: rgb(5 150 105); }
+.light .text-slate-300 { color: rgb(var(--s-300)); }
+
+@layer components {
+  .card { @apply rounded-xl border border-slate-800 bg-slate-900 p-4; }
+  .btn { @apply rounded-lg bg-slate-800 px-3 py-1.5 text-sm font-medium hover:bg-slate-700 disabled:opacity-40; }
+  .btn-primary { @apply rounded-lg bg-pal-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-pal-500; }
+  .btn-danger { @apply rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-500; }
+  .input { @apply w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm; }
+}
+
+/* Manuel intégré (Markdown rendu) */
+.manual { font-size: 0.925rem; line-height: 1.65; }
+.manual h1 { @apply mb-3 mt-2 text-2xl font-bold text-pal-500; }
+.manual h2 { @apply mb-2 mt-8 border-b border-slate-800 pb-1 text-xl font-semibold; }
+.manual h3 { @apply mb-1 mt-5 text-base font-semibold text-pal-500; }
+.manual h4 { @apply mb-1 mt-4 font-semibold; }
+.manual p, .manual ul, .manual ol, .manual table, .manual blockquote, .manual pre { @apply my-2; }
+.manual ul { @apply list-disc pl-6; }
+.manual ol { @apply list-decimal pl-6; }
+.manual li { @apply my-0.5; }
+.manual a { @apply text-pal-500 underline; }
+.manual code { @apply rounded bg-slate-800 px-1 py-0.5 text-[0.85em]; }
+.manual pre { @apply overflow-x-auto rounded-lg bg-slate-900 p-3; }
+.manual pre code { @apply bg-transparent p-0; }
+.manual blockquote { @apply border-l-4 border-amber-500 bg-slate-900 px-3 py-1 text-slate-300; }
+.manual table { @apply w-full border-collapse text-sm; }
+.manual th { @apply border border-slate-700 bg-slate-800 px-2 py-1 text-left; }
+.manual td { @apply border border-slate-800 px-2 py-1 align-top; }
+.manual hr { @apply my-6 border-slate-800; }
+.manual-ext { @apply text-slate-400; }
+
+/* Bouton en cours d'exécution : petit rond tournant, clics ignorés tant que la tâche n'est pas terminée. */
+button[data-loading] { pointer-events: none; cursor: progress; opacity: 0.8; }
+button[data-loading]::before {
+  content: ""; display: inline-block; width: 0.85em; height: 0.85em; margin-right: 0.5em; vertical-align: -0.12em;
+  border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: pal-spin 0.7s linear infinite;
+}
+@keyframes pal-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { button[data-loading]::before { animation-duration: 2s; } }
