@@ -180,6 +180,38 @@ pub fn remove_downloaded(server_dir: &Path, workshop_id: &str) -> Result<()> {
     Ok(())
 }
 
+/// Empreinte stable (FNV-1a) du contenu d'un dossier : chemins relatifs, tailles et dates. Sert à savoir si SteamCMD a mis un mod à jour.
+pub fn dir_signature(dir: &Path) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut feed = |bytes: &[u8]| for b in bytes { h ^= *b as u64; h = h.wrapping_mul(0x0000_0100_0000_01b3); };
+    let mut entries: Vec<_> = walkdir::WalkDir::new(dir).into_iter().filter_map(|e| e.ok()).filter(|e| e.file_type().is_file()).collect();
+    entries.sort_by(|a, b| a.path().cmp(b.path()));
+    for e in entries {
+        let rel = e.path().strip_prefix(dir).unwrap_or(e.path()).to_string_lossy().replace('\\', "/");
+        let (len, mtime) = e.metadata().map(|m| (m.len(), m.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_secs()))).unwrap_or((0, 0));
+        feed(rel.as_bytes()); feed(&len.to_le_bytes()); feed(&mtime.to_le_bytes());
+    }
+    h
+}
+
+/// Active exactement les mods du pack qui existent et fonctionnent sur un serveur ; renvoie les noms de paquets introuvables ou incompatibles.
+pub fn apply_pack(s: &mut ModSettings, pack: &[String], available: &[ModInfo]) -> Vec<String> {
+    let mut missing = Vec::new();
+    s.active.clear();
+    for name in pack {
+        match available.iter().find(|m| &m.package_name == name) {
+            Some(m) if m.server_compatible => set_active(s, name, true),
+            _ => missing.push(name.clone()),
+        }
+    }
+    missing
+}
+
+/// Mods activés dans PalModSettings.ini mais absents du dossier Workshop : le serveur risque de ne pas démarrer.
+pub fn missing_active(s: &ModSettings, available: &[ModInfo]) -> Vec<String> {
+    s.active.iter().filter(|a| !available.iter().any(|m| &m.package_name == *a)).cloned().collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -254,5 +286,33 @@ mod tests {
         assert!(settings_path(&server).with_extension("ini.bak").exists());
         assert_eq!(load_settings(&server).active, ["Beta"]);
         std::fs::remove_dir_all(server).ok();
+    }
+
+    fn info(pkg: &str, ok: bool) -> ModInfo {
+        ModInfo { workshop_id: "1".into(), package_name: pkg.into(), name: None, version: None, author: None, server_compatible: ok, active: false, removable: true, path: PathBuf::new() }
+    }
+
+    #[test]
+    fn packs_activate_only_existing_compatible_mods() {
+        let avail = [info("A", true), info("B", false), info("C", true)];
+        let mut s = ModSettings { active: vec!["Z".into()], ..ModSettings::default() };
+        let missing = apply_pack(&mut s, &["A".into(), "B".into(), "D".into(), "C".into()], &avail);
+        assert_eq!(s.active, ["A", "C"]);
+        assert_eq!(missing, ["B", "D"]);
+        assert_eq!(missing_active(&ModSettings { active: vec!["A".into(), "Q".into()], ..ModSettings::default() }, &avail), ["Q"]);
+    }
+
+    #[test]
+    fn signature_changes_with_content_and_is_stable_otherwise() {
+        let d = std::env::temp_dir().join(format!("pal-sig-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(d.join("sub")).unwrap();
+        std::fs::write(d.join("Info.json"), "{}").unwrap();
+        let a = dir_signature(&d);
+        assert_eq!(a, dir_signature(&d));
+        std::fs::write(d.join("sub/new.pak"), "x").unwrap();
+        assert_ne!(a, dir_signature(&d));
+        assert_ne!(dir_signature(&d), dir_signature(&d.join("nope")));
+        std::fs::remove_dir_all(&d).ok();
     }
 }
