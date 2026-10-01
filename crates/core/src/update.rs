@@ -48,7 +48,7 @@ struct GhAsset { name: String, browser_download_url: String }
 #[derive(Debug, Deserialize)]
 struct GhRelease { tag_name: String, #[serde(default)] draft: bool, #[serde(default)] body: Option<String>, #[serde(default)] assets: Vec<GhAsset> }
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct UpdateInfo { pub current: String, pub latest: String, pub notes: String, pub url: String, pub asset: String }
 
 /// Plus récente version strictement supérieure à `current` ayant un installeur Windows valide.
