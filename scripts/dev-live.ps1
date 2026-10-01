@@ -17,7 +17,8 @@ Set-Location (Split-Path -Parent $PSScriptRoot)
 git fetch origin $Branch
 git checkout $Branch
 git pull --ff-only origin $Branch
-if (-not (Test-Path node_modules)) { npm install }
+# Toujours : rapide si rien n'a changé, et indispensable quand une nouvelle dépendance a été ajoutée depuis la dernière fois.
+npm install --no-audit --no-fund
 
 # L'application tourne en tâche de fond ; la boucle ci-dessous tire les nouveaux commits.
 $app = Start-Process -FilePath "npm.cmd" -ArgumentList "run", "tauri", "dev" -NoNewWindow -PassThru
@@ -33,8 +34,8 @@ try {
     if ($before -ne $after) {
       Write-Host ("[{0}] mis à jour : {1}" -f (Get-Date -Format HH:mm:ss), (git log -1 --format=%s)) -ForegroundColor Yellow
       if (git diff --name-only $before $after | Select-String -Pattern "package(-lock)?\.json") {
-        Write-Host "Dépendances modifiées : arrêtez (Ctrl+C) et relancez ce script." -ForegroundColor Red
-        npm install | Out-Null
+        Write-Host "Dépendances modifiées : installation automatique (si l'écran reste en erreur, fermez l'application et relancez le lanceur)." -ForegroundColor Yellow
+        npm install --no-audit --no-fund | Out-Null
       }
     }
   }
