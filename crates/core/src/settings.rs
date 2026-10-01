@@ -25,6 +25,8 @@ pub struct AppSettings {
     pub start_server_on_launch: bool,
     /// Fermer la fenêtre la réduit dans la zone de notification au lieu de quitter.
     pub close_to_tray: bool,
+    /// Assistant de premier lancement terminé ou ignoré.
+    pub setup_done: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -230,6 +232,7 @@ impl Default for AppSettings {
             auto_restart: true,
             start_server_on_launch: false,
             close_to_tray: false,
+            setup_done: false,
         }
     }
 }

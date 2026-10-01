@@ -40,6 +40,7 @@ export const api = {
   history: (hours: number) => call<Sample[]>("get_history", { hours }),
   sessions: (days: number) => call<Session[]>("get_sessions", { days }),
   logs: (offset: number | null) => call<LogChunk>("read_logs", { offset }),
+  detectSetup: () => call<[string[], string[]]>("detect_setup"),
   diagnose: () => call<Check[]>("diagnose"),
   fixRest: (adminPassword: string) => call<void>("fix_rest", { adminPassword }),
   getAutostart: () => call<boolean>("get_autostart"),

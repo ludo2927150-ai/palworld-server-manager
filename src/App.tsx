@@ -13,6 +13,7 @@ import Join from "./pages/Join";
 import Performance from "./pages/Performance";
 import Mobile from "./pages/Mobile";
 import Mods from "./pages/Mods";
+import Wizard from "./pages/Wizard";
 import Announcements from "./pages/Announcements";
 
 const TABS = ["Tableau de bord", "Rejoindre", "Historique", "Performance", "Mods", "Joueurs", "Annonces", "Configuration", "Journal", "Sauvegardes", "Diagnostic", "Mobile", "Application"] as const;
@@ -22,7 +23,10 @@ export default function App() {
   const [tab, setTab] = useState<Tab>("Tableau de bord");
   const [snap, setSnap] = useState<Snapshot | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [wizard, setWizard] = useState(false);
   const notify = useCallback((m: string) => { setToast(m); setTimeout(() => setToast(null), 4000); }, []);
+
+  useEffect(() => { if (inTauri) api.getSettings().then((s) => setWizard(!s.setup_done)).catch(() => {}); }, []);
 
   useEffect(() => {
     api.snapshot().then(setSnap).catch(() => {});
@@ -34,6 +38,7 @@ export default function App() {
 
   return (
     <div className="flex h-screen flex-col">
+      {wizard && <Wizard onClose={() => setWizard(false)} notify={notify} />}
       {!inTauri && (
         <div className="bg-amber-500 px-4 py-1.5 text-center text-sm font-medium text-black" role="alert">
           MODE DÉMO — données fictives affichées dans le navigateur. Lancez « npm run tauri dev » (ou l'installeur) pour piloter un vrai serveur.

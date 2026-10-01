@@ -262,6 +262,11 @@ pub async fn read_logs(st: S<'_>, offset: Option<u64>) -> Result<LogChunk> {
 }
 
 #[tauri::command]
+pub fn detect_setup() -> (Vec<std::path::PathBuf>, Vec<std::path::PathBuf>) {
+    (setup::detect_server_dirs(), setup::detect_steamcmd())
+}
+
+#[tauri::command]
 pub async fn diagnose(st: S<'_>) -> Result<Vec<Check>> {
     let s = st.settings.read().await.clone();
     Ok(setup::diagnose(&s).await)

@@ -2,7 +2,7 @@ import type { AppSettings, Opt } from "./types";
 
 const settings: AppSettings = {
   server_dir: "C:\\palworld\\PalServer", steamcmd_path: "steamcmd.exe", access: { whitelist_enabled: false, allowed: [{ user_id: "steam_1", name: "Alice" }], kick_message: "" }, announcements: { enabled: true, only_with_players: true, welcome: "Bienvenue {nom} ! Ici : {joueurs}/{max} joueurs.", rules: [{ id: "a1", text: "Pensez à faire une pause et à boire de l'eau !", every_minutes: 30, enabled: true }] }, remote: { enabled: true, port: 8765, token: "0123456789abcdef0123456789abcdef", guests: [{ id: "g1", name: "Alice", token: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", perms: ["status", "players"], expires_at: null, created_at: 0 }] }, performance: { priority: "normal", cpu_cores: null, memory_limit_gb: null, memory_limit_restart: false },
-  schedule: { enabled: false, rules: [{ time: "04:00", action: "restart", days: [] }], announce_minutes: [15, 5, 1], memory_restart_percent: null }, launch_args: ["-useperfthreads"], auto_restart: true, close_to_tray: false, start_server_on_launch: false,
+  schedule: { enabled: false, rules: [{ time: "04:00", action: "restart", days: [] }], announce_minutes: [15, 5, 1], memory_restart_percent: null }, launch_args: ["-useperfthreads"], auto_restart: true, close_to_tray: false, start_server_on_launch: false, setup_done: true,
   rest: { host: "127.0.0.1", port: 8212, admin_password: "" },
   backup: { enabled: true, interval_minutes: 30, retention: 20, destination: "backups", mirror_destination: null, on_stop: true },
   alerts: { discord_webhook: null, ntfy_url: null, on_crash: true, on_player_join: true, on_player_leave: false, memory_threshold_percent: 90, cooldown_secs: 300, daily_summary_time: null, desktop: true },
@@ -38,6 +38,7 @@ export async function mock<T>(cmd: string, args?: Record<string, unknown>): Prom
       return r([{ name: "Alice", start: now - 5400, end: null }, { name: "Bob", start: now - 9000, end: now - 3600 }]);
     }
     case "read_logs": return r({ lines: ["[demo] Server started", "[demo] Alice joined the game"], offset: 0 });
+    case "detect_setup": return r([["C:/SteamLibrary/steamapps/common/PalServer"], ["C:/steamcmd/steamcmd.exe"]]);
     case "diagnose": return r([{ id: "exe", label: "PalServer.exe trouvé", ok: true, detail: "" }, { id: "rest_enabled", label: "API REST activée (RESTAPIEnabled=True)", ok: false, detail: "" }]);
     case "get_autostart": return r(false);
     case "network_info": return r({ lan_ip: "192.168.1.42" });

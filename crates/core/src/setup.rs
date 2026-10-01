@@ -69,6 +69,49 @@ pub fn fix_rest(s: &AppSettings, admin_password: &str) -> Result<AppSettings> {
     Ok(out)
 }
 
+/// Dossiers candidats contenant `PalServer.exe` (installations SteamCMD et bibliothèques Steam usuelles).
+pub fn detect_server_dirs() -> Vec<std::path::PathBuf> {
+    let mut roots: Vec<std::path::PathBuf> = Vec::new();
+    for pf in ["ProgramFiles(x86)", "ProgramFiles"] {
+        if let Some(v) = std::env::var_os(pf) { roots.push(std::path::PathBuf::from(v).join("Steam/steamapps/common")); }
+    }
+    for d in ["C", "D", "E", "F"] {
+        let base = std::path::PathBuf::from(format!("{d}:/"));
+        roots.push(base.join("SteamLibrary/steamapps/common"));
+        roots.push(base.join("steamcmd/steamapps/common"));
+        roots.push(base.join("Steam/steamapps/common"));
+        roots.push(base.join("PalServer"));
+    }
+    if let Some(h) = std::env::var_os("USERPROFILE") {
+        let h = std::path::PathBuf::from(h);
+        roots.push(h.join("Desktop/steamcmd/steamapps/common"));
+        roots.push(h.join("steamcmd/steamapps/common"));
+    }
+    let mut found = Vec::new();
+    for r in roots {
+        for cand in [r.clone(), r.join("PalServer")] {
+            if cand.join("PalServer.exe").exists() && !found.contains(&cand) { found.push(cand); }
+        }
+    }
+    found
+}
+
+/// Chemins usuels de `steamcmd.exe` présents sur la machine.
+pub fn detect_steamcmd() -> Vec<std::path::PathBuf> {
+    let mut v = Vec::new();
+    for d in ["C", "D", "E"] {
+        for sub in ["steamcmd", "SteamCMD"] {
+            let p = std::path::PathBuf::from(format!("{d}:/{sub}/steamcmd.exe"));
+            if p.exists() { v.push(p); }
+        }
+    }
+    if let Some(h) = std::env::var_os("USERPROFILE") {
+        let p = std::path::PathBuf::from(h).join("Desktop/steamcmd/steamcmd.exe");
+        if p.exists() { v.push(p); }
+    }
+    v
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -79,6 +122,12 @@ mod tests {
         std::fs::create_dir_all(&cfg).unwrap();
         std::fs::write(cfg.join("PalWorldSettings.ini"), "[/Script/Pal.PalGameWorldSettings]\nOptionSettings=(ServerName=\"x\",RESTAPIEnabled=False)\n").unwrap();
         AppSettings { server_dir: dir, ..Default::default() }
+    }
+
+    #[test]
+    fn detection_never_panics() {
+        let _ = detect_server_dirs();
+        let _ = detect_steamcmd();
     }
 
     #[test]
