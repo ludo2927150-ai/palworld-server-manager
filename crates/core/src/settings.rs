@@ -15,6 +15,7 @@ pub struct AppSettings {
     pub schedule: ScheduleSettings,
     pub performance: PerformanceSettings,
     pub announcements: AnnouncementSettings,
+    pub access: AccessSettings,
     pub remote: RemoteSettings,
     /// Chemin de `steamcmd.exe` (installation et mises à jour du serveur).
     pub steamcmd_path: PathBuf,
@@ -116,6 +117,22 @@ pub struct AnnouncementRule {
     pub enabled: bool,
 }
 
+/// Liste blanche appliquée par l'application : un joueur absent de la liste est expulsé dès sa connexion.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(default)]
+pub struct AccessSettings {
+    pub whitelist_enabled: bool,
+    pub allowed: Vec<AllowedPlayer>,
+    /// Message affiché à l'expulsé.
+    pub kick_message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AllowedPlayer {
+    pub user_id: String,
+    pub name: String,
+}
+
 /// Accès à distance (page web mobile servie par l'application). Désactivé par défaut.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -207,6 +224,7 @@ impl Default for AppSettings {
             schedule: ScheduleSettings::default(),
             performance: PerformanceSettings::default(),
             announcements: AnnouncementSettings::default(),
+            access: AccessSettings::default(),
             remote: RemoteSettings::default(),
             steamcmd_path: PathBuf::from("steamcmd.exe"),
             auto_restart: true,

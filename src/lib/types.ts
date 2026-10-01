@@ -9,6 +9,7 @@ export interface Opt { key: string; value: string; quoted: boolean }
 export interface BackupInfo { file_name: string; path: string; size_bytes: number; created: string }
 export interface AppSettings {
   server_dir: string; steamcmd_path: string;
+  access: AccessSettings;
   announcements: AnnouncementSettings;
   remote: { enabled: boolean; port: number; token: string; guests: Guest[] };
   performance: PerformanceSettings;
@@ -47,3 +48,10 @@ export interface ModsState {
 export interface Finding { id: string; severity: "critical" | "warning" | "info"; title: string; advice: string; count: number; sample: string }
 export interface AnnouncementRule { id: string; text: string; every_minutes: number; enabled: boolean }
 export interface AnnouncementSettings { enabled: boolean; only_with_players: boolean; welcome: string | null; rules: AnnouncementRule[] }
+export interface AllowedPlayer { user_id: string; name: string }
+export interface AccessSettings { whitelist_enabled: boolean; allowed: AllowedPlayer[]; kick_message: string }
+export interface KnownPlayer {
+  user_id: string; name: string; previous_names: string[]; first_seen: number; last_seen: number; sessions: number; total_secs: number;
+  online: boolean; banned: boolean; allowed: boolean;
+}
+export interface BanEntry { user_id: string; name: string; banned_at: number; reason: string | null }

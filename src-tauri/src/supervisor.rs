@@ -2,7 +2,7 @@
 //! redémarrage auto après crash. Émet l'événement `snapshot` vers le frontend à chaque tick.
 
 use crate::state::AppState;
-use palmanager_core::{alerts, announce, backup, perf, server::find_server_pids, history::{PlayerEvent, Sample}, summary, rest::RestClient, schedule::Action, settings::{AppSettings, RuleAction}};
+use palmanager_core::{alerts, announce, backup, players, perf, server::find_server_pids, history::{PlayerEvent, Sample}, summary, rest::RestClient, schedule::Action, settings::{AppSettings, RuleAction}};
 use std::{collections::HashSet, sync::atomic::Ordering, time::{Duration, Instant}};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_notification::NotificationExt;
@@ -64,6 +64,8 @@ pub fn spawn(app: AppHandle) {
         let mut launch_start_done = false;
         let mut prev_running = false;
         let mut welcome_ready = false;
+        let mut last_book_save = 0i64;
+        let mut kicked_at: std::collections::HashMap<String, Instant> = std::collections::HashMap::new();
         let mut announcer = announce::Announcer::new();
         let mut perf_applied: Option<(String, Vec<u32>)> = None; // (réglages, PID déjà traités)
         let mut last_limit_restart: Option<Instant> = None;
@@ -199,6 +201,26 @@ pub fn spawn(app: AppHandle) {
                 for n in known.difference(&now) { let _ = st.history.add_event(&PlayerEvent { t: ts, name: n.clone(), joined: false }); }
                 known = now;
                 if snap.running { welcome_ready = true; }
+            }
+
+            // Carnet des joueurs (temps de jeu, sessions) et liste blanche : uniquement quand l'API a répondu,
+            // pour ne jamais agir sur une liste de joueurs incertaine.
+            if snap.running && snap.metrics.is_some() {
+                let current: Vec<(String, String)> = snap.players.iter().map(|p| (p.user_id.clone(), p.name.clone())).collect();
+                let mut book = st.players.lock().await;
+                book.observe(ts, &current);
+                if ts - last_book_save >= 60 { let _ = book.save_if_dirty(); last_book_save = ts; }
+                drop(book);
+                if let Some(api) = &api {
+                    for p in &snap.players {
+                        let recently = kicked_at.get(&p.user_id).is_some_and(|t| t.elapsed() < Duration::from_secs(20));
+                        if !recently && players::should_kick(&s.access, &p.user_id) {
+                            kicked_at.insert(p.user_id.clone(), Instant::now());
+                            let msg = if s.access.kick_message.trim().is_empty() { "Ce serveur est privé (liste blanche)." } else { s.access.kick_message.as_str() };
+                            let _ = api.kick(&p.user_id, msg).await;
+                        }
+                    }
+                }
             }
 
             // Rappels réguliers (hors maintenance, serveur en ligne et API joignable).

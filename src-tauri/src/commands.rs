@@ -183,14 +183,42 @@ pub async fn kick_player(st: S<'_>, user_id: String) -> Result<()> {
 }
 
 #[tauri::command]
-pub async fn ban_player(st: S<'_>, user_id: String) -> Result<()> {
-    RestClient::new(&st.settings.read().await.rest)?.ban(&user_id, "Banni par l'administrateur").await
+pub async fn ban_player(st: S<'_>, user_id: String, name: Option<String>, reason: Option<String>) -> Result<()> {
+    let msg = reason.clone().filter(|r| !r.trim().is_empty()).unwrap_or_else(|| "Banni par l'administrateur".into());
+    RestClient::new(&st.settings.read().await.rest)?.ban(&user_id, &msg).await?;
+    st.bans.lock().await.add(palmanager_core::players::BanEntry {
+        user_id, name: name.unwrap_or_default(), banned_at: chrono::Utc::now().timestamp(), reason: reason.filter(|r| !r.trim().is_empty()),
+    })
 }
 
 #[tauri::command]
 pub async fn unban_player(st: S<'_>, user_id: String) -> Result<()> {
-    RestClient::new(&st.settings.read().await.rest)?.unban(&user_id).await
+    RestClient::new(&st.settings.read().await.rest)?.unban(&user_id).await?;
+    st.bans.lock().await.remove(&user_id)
 }
+
+#[derive(serde::Serialize)]
+pub struct KnownPlayerView {
+    #[serde(flatten)]
+    pub player: palmanager_core::players::KnownPlayer,
+    pub online: bool,
+    pub banned: bool,
+    pub allowed: bool,
+}
+
+/// Tous les joueurs déjà vus, avec leur état actuel (en ligne, banni, autorisé).
+#[tauri::command]
+pub async fn players_known(st: S<'_>) -> Result<Vec<KnownPlayerView>> {
+    let allowed: Vec<String> = st.settings.read().await.access.allowed.iter().map(|a| a.user_id.clone()).collect();
+    let banned: Vec<String> = st.bans.lock().await.list().into_iter().map(|b| b.user_id).collect();
+    let book = st.players.lock().await;
+    Ok(book.list().into_iter().map(|p| KnownPlayerView {
+        online: book.is_online(&p.user_id), banned: banned.contains(&p.user_id), allowed: allowed.contains(&p.user_id), player: p,
+    }).collect())
+}
+
+#[tauri::command]
+pub async fn players_bans(st: S<'_>) -> Result<Vec<palmanager_core::players::BanEntry>> { Ok(st.bans.lock().await.list()) }
 
 /// Arrête le serveur, met à jour via SteamCMD, puis relance s'il tournait. Renvoie la fin du log SteamCMD.
 #[tauri::command]

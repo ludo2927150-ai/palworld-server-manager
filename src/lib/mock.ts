@@ -1,7 +1,7 @@
 import type { AppSettings, Opt } from "./types";
 
 const settings: AppSettings = {
-  server_dir: "C:\\palworld\\PalServer", steamcmd_path: "steamcmd.exe", announcements: { enabled: true, only_with_players: true, welcome: "Bienvenue {nom} ! Ici : {joueurs}/{max} joueurs.", rules: [{ id: "a1", text: "Pensez à faire une pause et à boire de l'eau !", every_minutes: 30, enabled: true }] }, remote: { enabled: true, port: 8765, token: "0123456789abcdef0123456789abcdef", guests: [{ id: "g1", name: "Alice", token: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", perms: ["status", "players"], expires_at: null, created_at: 0 }] }, performance: { priority: "normal", cpu_cores: null, memory_limit_gb: null, memory_limit_restart: false },
+  server_dir: "C:\\palworld\\PalServer", steamcmd_path: "steamcmd.exe", access: { whitelist_enabled: false, allowed: [{ user_id: "steam_1", name: "Alice" }], kick_message: "" }, announcements: { enabled: true, only_with_players: true, welcome: "Bienvenue {nom} ! Ici : {joueurs}/{max} joueurs.", rules: [{ id: "a1", text: "Pensez à faire une pause et à boire de l'eau !", every_minutes: 30, enabled: true }] }, remote: { enabled: true, port: 8765, token: "0123456789abcdef0123456789abcdef", guests: [{ id: "g1", name: "Alice", token: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", perms: ["status", "players"], expires_at: null, created_at: 0 }] }, performance: { priority: "normal", cpu_cores: null, memory_limit_gb: null, memory_limit_restart: false },
   schedule: { enabled: false, rules: [{ time: "04:00", action: "restart", days: [] }], announce_minutes: [15, 5, 1], memory_restart_percent: null }, launch_args: ["-useperfthreads"], auto_restart: true, close_to_tray: false, start_server_on_launch: false,
   rest: { host: "127.0.0.1", port: 8212, admin_password: "" },
   backup: { enabled: true, interval_minutes: 30, retention: 20, destination: "backups", mirror_destination: null, on_stop: true },
@@ -56,6 +56,12 @@ export async function mock<T>(cmd: string, args?: Record<string, unknown>): Prom
       { id: "oom", severity: "critical", title: "Mémoire insuffisante", advice: "Le serveur a manqué de RAM. Dans l'onglet Performance, fixez une limite de RAM avec redémarrage automatique.", count: 2, sample: "Failed to allocate 4294967296 bytes" },
       { id: "mod", severity: "warning", title: "Erreur liée à un mod", advice: "Un mod pose problème. Dans l'onglet Mods, désactivez-le puis redémarrez.", count: 1, sample: "[WARN] mod error in X" },
     ]);
+    case "players_known": { const n = Math.floor(Date.now() / 1000); return r([
+      { user_id: "steam_1", name: "Alice", previous_names: ["Ali"], first_seen: n - 86400 * 20, last_seen: n, sessions: 41, total_secs: 3600 * 63, online: true, banned: false, allowed: true },
+      { user_id: "steam_2", name: "Bob", previous_names: [], first_seen: n - 86400 * 9, last_seen: n - 3600 * 5, sessions: 12, total_secs: 3600 * 18, online: false, banned: false, allowed: false },
+      { user_id: "steam_3", name: "Troll", previous_names: ["Gentil"], first_seen: n - 86400 * 2, last_seen: n - 86400, sessions: 2, total_secs: 900, online: false, banned: true, allowed: false },
+    ]); }
+    case "players_bans": return r([{ user_id: "steam_3", name: "Troll", banned_at: Math.floor(Date.now() / 1000) - 86400, reason: "Grief" }]);
     case "read_world_settings": return r({ options: world, from_default: false });
     case "write_world_settings": world = (args as { options: Opt[] }).options; return r(undefined);
     case "list_backups": return r([{ file_name: "palworld-20260930-120000.zip", path: "backups/x.zip", size_bytes: 52_000_000, created: new Date().toISOString() }]);

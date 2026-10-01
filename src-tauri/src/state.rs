@@ -1,4 +1,4 @@
-use palmanager_core::{alerts::AlertEngine, history::HistoryStore, schedule::Scheduler, monitor::{Monitor, Snapshot}, server::ServerController, settings::AppSettings};
+use palmanager_core::{players::{BanBook, PlayerBook}, alerts::AlertEngine, history::HistoryStore, schedule::Scheduler, monitor::{Monitor, Snapshot}, server::ServerController, settings::AppSettings};
 use std::{path::PathBuf, sync::atomic::AtomicBool};
 use tauri::{AppHandle, Manager};
 use tokio::sync::{Mutex, RwLock};
@@ -10,6 +10,8 @@ pub struct AppState {
     pub monitor: Mutex<Monitor>,
     pub alerts: Mutex<AlertEngine>,
     pub history: HistoryStore,
+    pub players: Mutex<PlayerBook>,
+    pub bans: Mutex<BanBook>,
     /// Tâche d'écoute de l'accès distant (None = désactivé) et dernière erreur de démarrage.
     pub remote: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
     pub remote_error: Mutex<Option<String>>,
@@ -41,6 +43,8 @@ impl AppState {
             monitor: Mutex::new(Monitor::new()),
             alerts: Mutex::new(AlertEngine::new()),
             history,
+            players: Mutex::new(PlayerBook::open(config_dir.join("players.json"))),
+            bans: Mutex::new(BanBook::open(config_dir.join("bans.json"))),
             remote: Mutex::new(None),
             remote_error: Mutex::new(None),
             remote_creds: Default::default(),
