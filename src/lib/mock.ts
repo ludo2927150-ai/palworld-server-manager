@@ -39,6 +39,8 @@ export async function mock<T>(cmd: string, args?: Record<string, unknown>): Prom
     }
     case "read_logs": return r({ lines: ["[demo] Server started", "[demo] Alice joined the game"], offset: 0 });
     case "detect_setup": return r([["C:/SteamLibrary/steamapps/common/PalServer"], ["C:/steamcmd/steamcmd.exe"]]);
+    case "app_version": return r("0.1.0-test.1");
+    case "check_update": return r(null);
     case "diagnose": return r([{ id: "exe", label: "PalServer.exe trouvé", ok: true, detail: "" }, { id: "rest_enabled", label: "API REST activée (RESTAPIEnabled=True)", ok: false, detail: "" }]);
     case "get_autostart": return r(false);
     case "network_info": return r({ lan_ip: "192.168.1.42" });

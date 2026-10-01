@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, inTauri, onSnapshot } from "./lib/api";
-import type { Snapshot } from "./lib/types";
+import type { Snapshot, UpdateInfo } from "./lib/types";
 import Dashboard from "./pages/Dashboard";
 import Players from "./pages/Players";
 import Config from "./pages/Config";
@@ -24,7 +24,17 @@ export default function App() {
   const [snap, setSnap] = useState<Snapshot | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [wizard, setWizard] = useState(false);
+  const [update, setUpdate] = useState<UpdateInfo | null>(null);
+  const [updating, setUpdating] = useState(false);
   const notify = useCallback((m: string) => { setToast(m); setTimeout(() => setToast(null), 4000); }, []);
+
+  useEffect(() => {
+    if (!inTauri) return;
+    const check = () => api.checkUpdate().then(setUpdate).catch(() => {});
+    const t0 = setTimeout(check, 8000);
+    const iv = setInterval(check, 6 * 3600 * 1000);
+    return () => { clearTimeout(t0); clearInterval(iv); };
+  }, []);
 
   useEffect(() => { if (inTauri) api.getSettings().then((s) => setWizard(!s.setup_done)).catch(() => {}); }, []);
 
@@ -42,6 +52,16 @@ export default function App() {
       {!inTauri && (
         <div className="bg-amber-500 px-4 py-1.5 text-center text-sm font-medium text-black" role="alert">
           MODE DÉMO — données fictives affichées dans le navigateur. Lancez « npm run tauri dev » (ou l'installeur) pour piloter un vrai serveur.
+        </div>
+      )}
+      {update && (
+        <div className="flex items-center gap-3 bg-pal-500 px-4 py-1.5 text-sm font-medium text-black" role="status">
+          Nouvelle version disponible : {update.latest} (vous avez {update.current}).
+          <button className="rounded bg-black/80 px-3 py-0.5 text-white disabled:opacity-50" disabled={updating}
+            onClick={() => { setUpdating(true); api.installUpdate(update).catch((e) => { setUpdating(false); notify(String(e)); }); }}>
+            {updating ? "Téléchargement…" : "Télécharger et installer"}
+          </button>
+          <button className="ml-auto underline" onClick={() => setUpdate(null)}>Plus tard</button>
         </div>
       )}
       <div className="flex min-h-0 flex-1">

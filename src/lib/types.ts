@@ -55,3 +55,4 @@ export interface KnownPlayer {
   online: boolean; banned: boolean; allowed: boolean;
 }
 export interface BanEntry { user_id: string; name: string; banned_at: number; reason: string | null }
+export interface UpdateInfo { current: string; latest: string; notes: string; url: string; asset: string }

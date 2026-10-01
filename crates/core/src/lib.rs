@@ -22,6 +22,7 @@ pub mod secrets;
 pub mod server;
 pub mod settings;
 pub mod summary;
+pub mod update;
 pub mod setup;
 pub mod steamcmd;
 
