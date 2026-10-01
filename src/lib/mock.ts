@@ -15,6 +15,11 @@ let world: Opt[] = [
   { key: "DeathPenalty", value: "All", quoted: false },
 ];
 
+const demoMods = [
+  { workshop_id: "3123456789", package_name: "FastHandiwork", name: "Fast Handiwork", version: "1.2", author: "Moddeur", server_compatible: true, active: true, removable: true, path: "x" },
+  { workshop_id: "3123456790", package_name: "CoolSkins", name: "Cool Skins", version: "2.0", author: "Artiste", server_compatible: false, active: false, removable: false, path: "y" },
+];
+
 export async function mock<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   const r = (v: unknown) => v as T;
   switch (cmd) {
@@ -41,6 +46,12 @@ export async function mock<T>(cmd: string, args?: Record<string, unknown>): Prom
     case "apply_performance": return r(2);
     case "remote_info": return r({ running: true, error: null, tailscale_found: true, bases: [{ label: "Partout (Tailscale, 4G ou Wi-Fi)", url: "http://100.101.102.103:8765/" }, { label: "Chez vous (même Wi-Fi)", url: "http://192.168.1.42:8765/" }], urls: [{ label: "Partout (Tailscale, 4G ou Wi-Fi)", url: "http://100.101.102.103:8765/#token=0123456789abcdef0123456789abcdef" }, { label: "Chez vous (même Wi-Fi)", url: "http://192.168.1.42:8765/#token=0123456789abcdef0123456789abcdef" }] });
     case "create_guest": return r({ id: "g2", name: (args as { name: string }).name, token: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", perms: (args as { perms: string[] }).perms, expires_at: null, created_at: 0 });
+    case "mods_state": return r({
+      settings_path: "C:\\palworld\\Mods\\PalModSettings.ini", global_enable: true, workshop_root: "C:\\palworld\\steamapps\\workshop\\content\\1623730", root_exists: true,
+      candidates: ["C:\\palworld\\steamapps\\workshop\\content\\1623730"], download_root: "C:\\palworld\\steamapps\\workshop\\content\\1623730",
+      mods: demoMods });
+    case "mods_set_active": { const a = args as { packageName: string; active: boolean }; demoMods.forEach((x) => { if (x.package_name === a.packageName) x.active = a.active; }); return r(undefined); }
+    case "mods_add": return r("Mod 3123456791 téléchargé.");
     case "read_world_settings": return r({ options: world, from_default: false });
     case "write_world_settings": world = (args as { options: Opt[] }).options; return r(undefined);
     case "list_backups": return r([{ file_name: "palworld-20260930-120000.zip", path: "backups/x.zip", size_bytes: 52_000_000, created: new Date().toISOString() }]);

@@ -1,5 +1,5 @@
 // Pont IPC. Hors Tauri (npm run dev dans un navigateur) on bascule sur des données factices.
-import type { AppSettings, BackupInfo, Check, Guest, LogChunk, Opt, Perm, RemoteInfo, Sample, Session, Snapshot, SystemInfo, WorldSettings } from "./types";
+import type { AppSettings, BackupInfo, Check, Guest, ModsState, LogChunk, Opt, Perm, RemoteInfo, Sample, Session, Snapshot, SystemInfo, WorldSettings } from "./types";
 import { mock } from "./mock";
 
 export const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -50,6 +50,12 @@ export const api = {
   regenerateToken: () => call<void>("regenerate_remote_token"),
   createGuest: (name: string, perms: Perm[], hours: number | null) => call<Guest>("create_guest", { name, perms, hours }),
   revokeGuest: (id: string) => call<void>("revoke_guest", { id }),
+  modsState: () => call<ModsState>("mods_state"),
+  modsSetGlobal: (enabled: boolean) => call<void>("mods_set_global", { enabled }),
+  modsSetRoot: (path: string) => call<void>("mods_set_root", { path }),
+  modsSetActive: (packageName: string, active: boolean) => call<void>("mods_set_active", { packageName, active }),
+  modsAdd: (input: string) => call<string>("mods_add", { input }),
+  modsRemove: (workshopId: string) => call<void>("mods_remove", { workshopId }),
   announce: (message: string) => call<void>("announce", { message }),
   kick: (userId: string) => call<void>("kick_player", { userId }),
 };

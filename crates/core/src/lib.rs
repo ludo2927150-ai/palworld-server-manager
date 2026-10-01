@@ -8,6 +8,7 @@ pub mod error;
 pub mod history;
 pub mod ini;
 pub mod logs;
+pub mod mods;
 pub mod monitor;
 pub mod net;
 pub mod perf;

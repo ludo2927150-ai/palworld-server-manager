@@ -1,7 +1,7 @@
 //! Commandes IPC appelées par le frontend (`invoke`). Fines : la logique vit dans `palmanager-core`.
 
 use crate::state::AppState;
-use palmanager_core::{alerts, backup::{self, BackupInfo}, history::{self, Sample, Session}, logs::{self, LogChunk}, setup::{self, Check}, ini::{self, Options}, monitor::Snapshot, rest::RestClient, settings::AppSettings, steamcmd, Error, Result};
+use palmanager_core::{mods, alerts, backup::{self, BackupInfo}, history::{self, Sample, Session}, logs::{self, LogChunk}, setup::{self, Check}, ini::{self, Options}, monitor::Snapshot, rest::RestClient, settings::AppSettings, steamcmd, Error, Result};
 use std::{sync::atomic::Ordering, time::Duration};
 use tauri::State;
 
@@ -319,5 +319,98 @@ pub async fn revoke_guest(app: tauri::AppHandle, st: S<'_>, id: String) -> Resul
     s.save(&st.settings_path)?;
     *st.settings.write().await = s;
     crate::remote::apply(&app).await;
+    Ok(())
+}
+
+#[derive(serde::Serialize)]
+pub struct ModsState {
+    pub settings_path: String,
+    pub global_enable: bool,
+    pub workshop_root: Option<String>,
+    pub root_exists: bool,
+    /// Dossiers Workshop trouvés sur ce PC (serveur, client Steam).
+    pub candidates: Vec<String>,
+    /// Dossier utilisé pour les téléchargements automatiques (dans le dossier du serveur).
+    pub download_root: String,
+    pub mods: Vec<mods::ModInfo>,
+}
+
+fn mods_state_for(s: &AppSettings) -> ModsState {
+    let ms = mods::load_settings(&s.server_dir);
+    let candidates: Vec<std::path::PathBuf> = mods::candidate_roots(&s.server_dir);
+    let root = ms.workshop_root.clone().map(std::path::PathBuf::from).or_else(|| candidates.first().cloned());
+    ModsState {
+        settings_path: mods::settings_path(&s.server_dir).display().to_string(),
+        global_enable: ms.global_enable,
+        root_exists: root.as_ref().is_some_and(|r| r.is_dir()),
+        mods: root.as_ref().map(|r| mods::scan(r, &s.server_dir, &ms.active)).unwrap_or_default(),
+        workshop_root: root.map(|r| r.display().to_string()),
+        candidates: candidates.iter().map(|c| c.display().to_string()).collect(),
+        download_root: mods::download_root(&s.server_dir).display().to_string(),
+    }
+}
+
+#[tauri::command]
+pub async fn mods_state(st: S<'_>) -> Result<ModsState> { Ok(mods_state_for(&*st.settings.read().await)) }
+
+#[tauri::command]
+pub async fn mods_set_global(st: S<'_>, enabled: bool) -> Result<()> {
+    let s = st.settings.read().await.clone();
+    let mut ms = mods::load_settings(&s.server_dir);
+    ms.global_enable = enabled;
+    mods::save_settings(&s.server_dir, &ms)
+}
+
+/// Définit le dossier Workshop lu par le serveur (doit exister).
+#[tauri::command]
+pub async fn mods_set_root(st: S<'_>, path: String) -> Result<()> {
+    let p = std::path::PathBuf::from(path.trim().trim_matches('"'));
+    if !p.is_dir() { return Err(Error::Other(format!("dossier introuvable : {}", p.display()))); }
+    let s = st.settings.read().await.clone();
+    let mut ms = mods::load_settings(&s.server_dir);
+    ms.workshop_root = Some(p.display().to_string());
+    mods::save_settings(&s.server_dir, &ms)
+}
+
+#[tauri::command]
+pub async fn mods_set_active(st: S<'_>, package_name: String, active: bool) -> Result<()> {
+    let s = st.settings.read().await.clone();
+    let mut ms = mods::load_settings(&s.server_dir);
+    // On n'active que des mods réellement présents dans le dossier Workshop courant.
+    if active {
+        let root = ms.workshop_root.clone().map(std::path::PathBuf::from).or_else(|| mods::candidate_roots(&s.server_dir).into_iter().next());
+        let known = root.is_some_and(|r| mods::scan(&r, &s.server_dir, &[]).iter().any(|m| m.package_name == package_name));
+        if !known { return Err(Error::Other("mod introuvable dans le dossier Workshop".into())); }
+    }
+    mods::set_active(&mut ms, &package_name, active);
+    mods::save_settings(&s.server_dir, &ms)
+}
+
+/// Télécharge un mod du Workshop (identifiant ou adresse) via SteamCMD, dans le dossier du serveur.
+/// Si aucun dossier Workshop n'est encore défini, celui du serveur est adopté.
+#[tauri::command]
+pub async fn mods_add(st: S<'_>, input: String) -> Result<String> {
+    let id = mods::parse_workshop_id(&input).ok_or_else(|| Error::Other("identifiant ou adresse Workshop invalide".into()))?;
+    let s = st.settings.read().await.clone();
+    steamcmd::download_workshop(&s.steamcmd_exe(), &s.server_dir, &id).await?;
+    let dl = mods::download_root(&s.server_dir);
+    let mut ms = mods::load_settings(&s.server_dir);
+    let note = match &ms.workshop_root {
+        None => { ms.workshop_root = Some(dl.display().to_string()); mods::save_settings(&s.server_dir, &ms)?; String::new() }
+        Some(r) if std::path::Path::new(r) != dl.as_path() =>
+            format!(" Attention : le serveur lit actuellement {r} ; ce mod est dans {}. Choisissez un seul dossier Workshop.", dl.display()),
+        _ => String::new(),
+    };
+    Ok(format!("Mod {id} téléchargé.{note}"))
+}
+
+/// Retire un mod téléchargé par l'application (dossier du serveur) et le désactive.
+#[tauri::command]
+pub async fn mods_remove(st: S<'_>, workshop_id: String) -> Result<()> {
+    let s = st.settings.read().await.clone();
+    let mut ms = mods::load_settings(&s.server_dir);
+    let pkg = mods::scan(&mods::download_root(&s.server_dir), &s.server_dir, &[]).into_iter().find(|m| m.workshop_id == workshop_id).map(|m| m.package_name);
+    mods::remove_downloaded(&s.server_dir, &workshop_id)?;
+    if let Some(p) = pkg { mods::set_active(&mut ms, &p, false); mods::save_settings(&s.server_dir, &ms)?; }
     Ok(())
 }

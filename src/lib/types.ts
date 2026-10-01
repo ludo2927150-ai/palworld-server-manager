@@ -35,3 +35,11 @@ export interface RemoteUrl { label: string; url: string }
 export interface RemoteInfo { running: boolean; error: string | null; urls: RemoteUrl[]; bases: RemoteUrl[]; tailscale_found: boolean }
 export type Perm = "status" | "players" | "logs" | "charts" | "start" | "stop" | "restart" | "backup" | "announce" | "kick";
 export interface Guest { id: string; name: string; token: string; perms: Perm[]; expires_at: number | null; created_at: number }
+export interface ModInfo {
+  workshop_id: string; package_name: string; name: string | null; version: string | null; author: string | null;
+  server_compatible: boolean; active: boolean; removable: boolean; path: string;
+}
+export interface ModsState {
+  settings_path: string; global_enable: boolean; workshop_root: string | null; root_exists: boolean;
+  candidates: string[]; download_root: string; mods: ModInfo[];
+}

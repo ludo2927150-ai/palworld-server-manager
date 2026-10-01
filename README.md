@@ -16,6 +16,7 @@ Application desktop Windows (Tauri 2 + React + Tailwind) pour piloter un serveur
 | Onglet Performance : limite de RAM (alerte/redémarrage), priorité CPU, choix des cœurs, options de threads | scaffold (priorité/cœurs à valider sur Windows) |
 | Accès depuis le téléphone (page web + clé secrète, Tailscale pour la 4G, adresses publiques refusées) | scaffold (à valider sur Android) |
 | Invités : un QR code par ami, permissions au choix, durée limitée, révocation immédiate | scaffold (testé : droits, expiration, révocation) |
+| Onglet Mods : mods Workshop de Palworld 1.0 (PalModSettings.ini, téléchargement SteamCMD, activer/désactiver) | scaffold (à valider sur un vrai serveur) |
 | Copie des sauvegardes vers un second emplacement, résumé quotidien Discord/ntfy | scaffold fonctionnel (testé) |
 | Icône de zone de notification, lancement avec Windows, fermer = réduire | scaffold (à valider sur Windows) |
 | Alertes Discord + push mobile (ntfy) : crash, mémoire, connexions | scaffold fonctionnel (moteur testé) |
