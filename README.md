@@ -26,6 +26,8 @@ Application desktop Windows (Tauri 2 + React + Tailwind) pour piloter un serveur
 
 > ⚠️ Dans un navigateur (`npm run dev`) l'interface affiche des **données fictives** (bandeau « MODE DÉMO »). Seule l'application Tauri pilote un vrai serveur.
 
+**📖 Manuel d'utilisation complet : [`docs/MANUEL.md`](docs/MANUEL.md)** (toutes les fonctions, réglages, automatismes, recettes et dépannage).
+
 ## Télécharger l'application (Windows)
 
 Les versions de test sont publiées dans l'onglet **Releases** du dépôt : téléchargez le fichier `…_x64-setup.exe` et lancez-le (l'application n'est pas signée : SmartScreen demande « Informations complémentaires » puis « Exécuter quand même »). Installation pour l'utilisateur courant, sans droits administrateur.
