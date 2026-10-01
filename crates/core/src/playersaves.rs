@@ -75,7 +75,7 @@ pub fn list(dest: &Path, id: &str) -> Vec<PlayerSnapshot> {
         let p = e.path();
         let name = p.file_name()?.to_string_lossy().to_string();
         let stamp = name.strip_suffix(".zip")?.split('-').take(2).collect::<Vec<_>>().join("-");
-        let naive = chrono::NaiveDateTime::parse_from_str(&stamp, "%Y%m%d-%H%M%S").ok()?;
+        let naive = chrono::NaiveDateTime::parse_from_str(&stamp, "%Y%m%d-%H%M%S%3f").ok()?;
         Some(PlayerSnapshot { taken: Local.from_local_datetime(&naive).single()?, size_bytes: e.metadata().ok()?.len(), file_name: name, path: p })
     }).collect();
     v.sort_by(|a, b| b.taken.cmp(&a.taken));
@@ -99,7 +99,7 @@ pub fn snapshot_player(save_dir: &Path, dest: &Path, id: &str, keep: usize) -> R
     let dir = player_dir(dest, id);
     if list(dest, id).first().is_some_and(|l| l.file_name.contains(&format!("-{tag}.zip"))) { return Ok(None); }
     std::fs::create_dir_all(&dir)?;
-    let name = format!("{}-{tag}.zip", Local::now().format("%Y%m%d-%H%M%S"));
+    let name = format!("{}-{tag}.zip", Local::now().format("%Y%m%d-%H%M%S%3f"));
     let path = dir.join(&name);
     let mut zip = zip::ZipWriter::new(File::create(&path)?);
     for (rel, data) in &blobs {
@@ -179,10 +179,10 @@ mod tests {
         assert_eq!(known_ids(&save).len(), 2);
         let s1 = snapshot_player(&save, &dest, ID, 2).unwrap().unwrap();
         assert!(snapshot_player(&save, &dest, ID, 2).unwrap().is_none(), "inchangé : pas de doublon");
-        std::thread::sleep(std::time::Duration::from_millis(1100)); // horodatage à la seconde
+        std::thread::sleep(std::time::Duration::from_millis(5)); // horodatage à la milliseconde
         std::fs::write(players.join(format!("{ID}.sav")), b"v2").unwrap();
         let s2 = snapshot_player(&save, &dest, ID, 2).unwrap().unwrap();
-        std::thread::sleep(std::time::Duration::from_millis(1100));
+        std::thread::sleep(std::time::Duration::from_millis(5));
         std::fs::write(players.join(format!("{ID}.sav")), b"v3").unwrap();
         snapshot_player(&save, &dest, ID, 2).unwrap().unwrap();
         let l = list(&dest, ID);

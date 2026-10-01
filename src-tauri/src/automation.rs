@@ -46,6 +46,11 @@ fn newest_backup(s: &AppSettings) -> Option<std::path::PathBuf> {
 /// Renvoie un message de résultat (préfixé ✅ / ⚠️ / ↩️ / ❌) à envoyer aux alertes.
 pub async fn guarded_cycle(st: &AppState, s: &AppSettings, label: &str, server_update: bool, suspect_mods: &[String], profile: Option<&str>) -> String {
     if st.maintenance.swap(true, Ordering::SeqCst) { return "⏳ Une maintenance est déjà en cours.".into(); }
+    run_locked(st, s, label, server_update, suspect_mods, profile).await
+}
+
+/// Comme `guarded_cycle`, mais l'appelant a déjà pris le verrou de maintenance ; il est relâché à la fin.
+pub async fn run_locked(st: &AppState, s: &AppSettings, label: &str, server_update: bool, suspect_mods: &[String], profile: Option<&str>) -> String {
     let msg = cycle(st, s, label, server_update, suspect_mods, profile).await;
     st.expected_stop.store(false, Ordering::SeqCst);
     st.maintenance.store(false, Ordering::SeqCst);

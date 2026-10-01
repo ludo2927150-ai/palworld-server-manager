@@ -7,11 +7,67 @@ use std::{collections::HashSet, sync::atomic::Ordering, time::{Duration, Instant
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_notification::NotificationExt;
 
-/// Cycle de maintenance sûr (voir `automation::guarded_cycle`) puis notification du résultat.
-async fn run_cycle(app: &AppHandle, st: &AppState, s: &AppSettings, label: &str, server_update: bool, suspect: &[String], profile: Option<&str>) {
-    let msg = automation::guarded_cycle(st, s, label, server_update, suspect, profile).await;
-    toast(app, s, &msg);
+/// Lance un cycle de maintenance sûr (voir `automation`) en tâche de fond : la boucle de surveillance, les graphiques et les
+/// alertes continuent pendant le préavis et le redémarrage. `warn` = (secondes, message) annoncé aux joueurs puis attendu.
+/// Sans effet si une maintenance est déjà en cours.
+fn run_cycle(app: &AppHandle, s: &AppSettings, label: &'static str, server_update: bool, suspect: Vec<String>, profile: Option<String>, warn: Option<(u64, String)>) {
+    if app.state::<AppState>().maintenance.swap(true, Ordering::SeqCst) { return; }
+    let (app, s) = (app.clone(), s.clone());
+    tauri::async_runtime::spawn(async move { cycle_task(app, s, label, server_update, suspect, profile, warn).await });
+}
+
+/// Corps d'un cycle ; le verrou de maintenance est déjà pris par l'appelant et relâché par `run_locked`.
+async fn cycle_task(app: AppHandle, s: AppSettings, label: &'static str, server_update: bool, suspect: Vec<String>, profile: Option<String>, warn: Option<(u64, String)>) {
+    let st = app.state::<AppState>();
+    if let Some((secs, text)) = warn {
+        if let Ok(api) = RestClient::new(&s.rest) { let _ = api.announce(&text).await; }
+        tokio::time::sleep(Duration::from_secs(secs)).await;
+    }
+    let msg = automation::run_locked(&st, &s, label, server_update, &suspect, profile.as_deref()).await;
+    toast(&app, &s, &msg);
     let _ = alerts::dispatch_text(&s.alerts, &msg).await;
+}
+
+/// Vérifie en arrière-plan si une nouvelle version du serveur existe (SteamCMD peut prendre plusieurs dizaines de secondes).
+fn spawn_update_check(app: &AppHandle, s: &AppSettings) {
+    if app.state::<AppState>().bg_update.swap(true, Ordering::SeqCst) { return; }
+    let (app, s) = (app.clone(), s.clone());
+    tauri::async_runtime::spawn(async move {
+        let st = app.state::<AppState>();
+        if let Ok(latest) = steamcmd::latest_build(&s.steamcmd_exe()).await {
+            let installed = steamcmd::installed_build(&s.server_dir);
+            let already = st.update_attempted.lock().ok().is_some_and(|a| a.as_deref() == Some(latest.as_str()));
+            if installed.as_deref().is_some_and(|i| i != latest) && !already && !st.maintenance.swap(true, Ordering::SeqCst) {
+                if let Ok(mut a) = st.update_attempted.lock() { *a = Some(latest.clone()); }
+                let _ = alerts::dispatch_text(&s.alerts, &format!("🔄 Mise à jour du serveur Palworld (build {} → {latest}).", installed.unwrap_or_default())).await;
+                let wait = s.server_update.warn_minutes.min(30);
+                let players = st.last_snapshot.read().await.players.len();
+                let warn = (wait > 0 && players > 0).then(|| (wait * 60, format!("Mise à jour du serveur dans {wait} minute(s).")));
+                cycle_task(app.clone(), s.clone(), "maj", true, vec![], None, warn).await;
+            }
+        }
+        st.bg_update.store(false, Ordering::SeqCst);
+    });
+}
+
+/// Télécharge / met à jour les mods gérés en arrière-plan ; un changement sur un serveur en marche déclenche un cycle sûr.
+fn spawn_mods_check(app: &AppHandle, s: &AppSettings) {
+    if app.state::<AppState>().bg_mods.swap(true, Ordering::SeqCst) { return; }
+    let (app, s) = (app.clone(), s.clone());
+    tauri::async_runtime::spawn(async move {
+        let st = app.state::<AppState>();
+        let (changed, errors) = automation::mods_sync(&s).await;
+        if !errors.is_empty() { let _ = alerts::dispatch_text(&s.alerts, &format!("⚠️ Mods : {}", errors.join(" ; "))).await; }
+        if !changed.is_empty() && st.server.is_running().await && !st.maintenance.swap(true, Ordering::SeqCst) {
+            let names = automation::package_names(&s, &changed);
+            let _ = alerts::dispatch_text(&s.alerts, &format!("🧩 Mods mis à jour ({}) : redémarrage du serveur.", changed.join(", "))).await;
+            let wait = s.server_update.warn_minutes.min(30);
+            let players = st.last_snapshot.read().await.players.len();
+            let warn = (wait > 0 && players > 0).then(|| (wait * 60, format!("Mise à jour de mods : redémarrage dans {wait} minute(s).")));
+            cycle_task(app.clone(), s.clone(), "mods", false, names, None, warn).await;
+        }
+        st.bg_mods.store(false, Ordering::SeqCst);
+    });
 }
 
 /// Arrêt planifié : sauvegarde puis arrêt propre. `expected_stop` reste vrai pour éviter une fausse alerte de
@@ -79,7 +135,6 @@ pub fn spawn(app: AppHandle) {
         let mut last_health_check = Instant::now();
         let mut health_sent: std::collections::HashMap<&'static str, Instant> = std::collections::HashMap::new();
         let mut last_update_check: Option<Instant> = None;
-        let mut update_attempted: Option<String> = None;
         let mut known: HashSet<String> = HashSet::new();
         let mut tick = tokio::time::interval(Duration::from_secs(5));
         loop {
@@ -140,10 +195,10 @@ pub fn spawn(app: AppHandle) {
                             }
                         }
                         Action::Run { action: RuleAction::Start, profile } => if !snap.running {
-                            if profile.is_some() { run_cycle(&app, &st, &s, "planifie", false, &[], profile.as_deref()).await } else { scheduled_start(&st, &s).await }
+                            if profile.is_some() { run_cycle(&app, &s, "planifie", false, vec![], profile, None) } else { scheduled_start(&st, &s).await }
                         },
                         Action::Run { action: RuleAction::Stop, .. } => if snap.running { maintenance_stop(&st, &s).await },
-                        Action::Run { action: RuleAction::Restart, profile } => run_cycle(&app, &st, &s, "planifie", false, &[], profile.as_deref()).await,
+                        Action::Run { action: RuleAction::Restart, profile } => run_cycle(&app, &s, "planifie", false, vec![], profile, None),
                     }
                 }
                 if let Some(th) = s.schedule.memory_restart_percent.filter(|_| s.schedule.enabled && snap.running) {
@@ -153,9 +208,8 @@ pub fn spawn(app: AppHandle) {
                             if let Some(api) = &api { let _ = api.announce("Mémoire élevée : redémarrage dès que le serveur sera vide.").await; }
                             empty_wait = Some(Instant::now() + Duration::from_secs(wait * 60));
                         } else {
-                            if let Some(api) = &api { let _ = api.announce("Mémoire élevée : redémarrage dans 1 minute.").await; }
-                            tokio::time::sleep(Duration::from_secs(60)).await;
-                            run_cycle(&app, &st, &s, "memoire", false, &[], None).await;
+                            let warn = (!snap.players.is_empty()).then(|| (60, "Mémoire élevée : redémarrage dans 1 minute.".to_string()));
+                            run_cycle(&app, &s, "memoire", false, vec![], None, warn);
                         }
                     }
                 }
@@ -163,11 +217,8 @@ pub fn spawn(app: AppHandle) {
                     if !snap.running { empty_wait = None; }
                     else if snap.players.is_empty() || Instant::now() >= deadline {
                         empty_wait = None;
-                        if !snap.players.is_empty() {
-                            if let Some(api) = &api { let _ = api.announce("Redémarrage dans 1 minute (mémoire élevée).").await; }
-                            tokio::time::sleep(Duration::from_secs(60)).await;
-                        }
-                        run_cycle(&app, &st, &s, "memoire", false, &[], None).await;
+                        let warn = (!snap.players.is_empty()).then(|| (60, "Redémarrage dans 1 minute (mémoire élevée).".to_string()));
+                        run_cycle(&app, &s, "memoire", false, vec![], None, warn);
                     }
                 }
             }
@@ -198,9 +249,8 @@ pub fn spawn(app: AppHandle) {
                     let txt = format!("🟠 RAM du serveur : {used_gb:.1} Go (limite {limit:.1} Go){}", if s.performance.memory_limit_restart { " — redémarrage dans 1 minute." } else { "." });
                     let _ = alerts::dispatch_text(&s.alerts, &txt).await;
                     if s.performance.memory_limit_restart {
-                        if let Some(api) = &api { let _ = api.announce("Mémoire élevée : redémarrage dans 1 minute.").await; }
-                        tokio::time::sleep(Duration::from_secs(60)).await;
-                        run_cycle(&app, &st, &s, "memoire", false, &[], None).await;
+                        let warn = (!snap.players.is_empty()).then(|| (60, "Mémoire élevée : redémarrage dans 1 minute.".to_string()));
+                        run_cycle(&app, &s, "memoire", false, vec![], None, warn);
                     }
                 }
             }
@@ -276,24 +326,12 @@ pub fn spawn(app: AppHandle) {
                 }
             }
 
-            // Mise à jour automatique du serveur Palworld : build Steam public ≠ build installé.
+            // Mise à jour automatique du serveur Palworld : build Steam public ≠ build installé (vérifié en arrière-plan).
             if s.server_update.enabled && !maintenance
                 && last_update_check.map_or(started_at.elapsed() >= Duration::from_secs(120), |t| t.elapsed() >= Duration::from_secs(s.server_update.check_every_minutes.max(15) * 60))
             {
                 last_update_check = Some(Instant::now());
-                if let Ok(latest) = steamcmd::latest_build(&s.steamcmd_exe()).await {
-                    let installed = steamcmd::installed_build(&s.server_dir);
-                    if installed.as_deref().is_some_and(|i| i != latest) && update_attempted.as_deref() != Some(latest.as_str()) {
-                        update_attempted = Some(latest.clone());
-                        let wait = s.server_update.warn_minutes.min(30);
-                        if snap.running && wait > 0 && !snap.players.is_empty() {
-                            if let Some(api) = &api { let _ = api.announce(&format!("Mise à jour du serveur dans {wait} minute(s).")).await; }
-                            tokio::time::sleep(Duration::from_secs(wait * 60)).await;
-                        }
-                        let _ = alerts::dispatch_text(&s.alerts, &format!("🔄 Mise à jour du serveur Palworld (build {} → {latest}).", installed.unwrap_or_default())).await;
-                        run_cycle(&app, &st, &s, "maj", true, &[], None).await;
-                    }
-                }
+                spawn_update_check(&app, &s);
             }
 
             // Surveillance : serveur gelé (API muette après avoir répondu) → redémarrage ; relance auto bloquée après une boucle de crashs.
@@ -304,32 +342,19 @@ pub fn spawn(app: AppHandle) {
                     let m = format!("🧊 Le serveur ne répond plus depuis {} min (processus vivant) : redémarrage automatique.", s.watchdog.hung_minutes);
                     toast(&app, &s, &m);
                     let _ = alerts::dispatch_text(&s.alerts, &m).await;
-                    run_cycle(&app, &st, &s, "gel", false, &[], None).await;
+                    run_cycle(&app, &s, "gel", false, vec![], None, None);
                 }
                 if snap.running && !prev_up && crash_blocked { crash_blocked = false; wd.reset_crashes(); }
                 prev_up = snap.running;
             }
 
-            // Mods gérés : téléchargés et mis à jour automatiquement. Un changement sur un serveur en marche déclenche un
-            // redémarrage sûr (annonce, sauvegarde, vérification, désactivation des mods fautifs si le serveur ne repart pas).
+            // Mods gérés : téléchargés et mis à jour automatiquement (en arrière-plan). Un changement sur un serveur en marche
+            // déclenche un redémarrage sûr (préavis, sauvegarde, vérification, désactivation des mods fautifs si le serveur ne repart pas).
             if s.mod_automation.auto_update && !s.mod_automation.managed_ids.is_empty() && !maintenance
                 && last_mod_check.map_or(started_at.elapsed() >= Duration::from_secs(180), |t| t.elapsed() >= Duration::from_secs(s.mod_automation.check_every_minutes.max(30) * 60))
             {
                 last_mod_check = Some(Instant::now());
-                let (changed, errors) = automation::mods_sync(&s).await;
-                if !errors.is_empty() {
-                    let _ = alerts::dispatch_text(&s.alerts, &format!("⚠️ Mods : {}", errors.join(" ; "))).await;
-                }
-                if !changed.is_empty() && st.server.is_running().await {
-                    let names = automation::package_names(&s, &changed);
-                    let wait = s.server_update.warn_minutes.min(30);
-                    let _ = alerts::dispatch_text(&s.alerts, &format!("🧩 Mods mis à jour ({}) : redémarrage du serveur.", changed.join(", "))).await;
-                    if wait > 0 && !snap.players.is_empty() {
-                        if let Some(api) = &api { let _ = api.announce(&format!("Mise à jour de mods : redémarrage dans {wait} minute(s).")).await; }
-                        tokio::time::sleep(Duration::from_secs(wait * 60)).await;
-                    }
-                    run_cycle(&app, &st, &s, "mods", false, &names, None).await;
-                }
+                spawn_mods_check(&app, &s);
             }
 
             // UPnP : ouverture du port de jeu sur la box, uniquement si vous l'avez activée ; renouvelée toutes les 20 min.

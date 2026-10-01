@@ -19,7 +19,10 @@ Application desktop Windows (Tauri 2 + React + Tailwind) pour piloter un serveur
 | Onglet Mods : mods Workshop de Palworld 1.0 (PalModSettings.ini, téléchargement SteamCMD, activer/désactiver) | scaffold (à valider sur un vrai serveur) |
 | Copie des sauvegardes vers un second emplacement, résumé quotidien Discord/ntfy | scaffold fonctionnel (testé) |
 | Icône de zone de notification, lancement avec Windows, fermer = réduire | scaffold (à valider sur Windows) |
-| Alertes Discord + push mobile (ntfy) : crash, mémoire, connexions | scaffold fonctionnel (moteur testé) |
+| Alertes Discord + push mobile (ntfy) : crash, mémoire, connexions, sauvegardes anciennes, disque plein | scaffold fonctionnel (moteur testé) |
+| Joueurs : historique, détails (niveau, position, constructions), bannis, liste blanche, sauvegarde de la fiche de chaque joueur | scaffold (à valider sur un vrai monde) |
+| Automatisation : cycle de redémarrage sûr avec retour arrière, détection de gel / crashs en boucle, mises à jour auto du serveur et des mods, packs de mods, profils planifiés | scaffold (logique testée, à valider sur un vrai serveur) |
+| Bot Discord (/statut, /redemarrer…), installation depuis zéro, UPnP (désactivé par défaut), mise à jour de l'application | scaffold (à valider en réel) |
 
 > ⚠️ Dans un navigateur (`npm run dev`) l'interface affiche des **données fictives** (bandeau « MODE DÉMO »). Seule l'application Tauri pilote un vrai serveur.
 

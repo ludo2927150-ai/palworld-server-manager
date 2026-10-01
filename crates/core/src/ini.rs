@@ -68,6 +68,19 @@ pub fn get<'a>(options: &'a Options, key: &str) -> Option<&'a str> {
     options.iter().find(|o| o.key == key).map(|o| o.value.as_str())
 }
 
+/// Refuse ce qui casserait le fichier : clé vide ou étrange, saut de ligne, guillemet dans une valeur entre guillemets
+/// (un nom de serveur contenant `"` rendrait toute la ligne `OptionSettings` illisible et le serveur ne démarrerait plus).
+pub fn validate(options: &Options) -> Result<()> {
+    for o in options {
+        if o.key.is_empty() || !o.key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+            return Err(crate::Error::Other(format!("nom d'option invalide : « {} »", o.key)));
+        }
+        if o.value.contains(['\r', '\n']) { return Err(crate::Error::Other(format!("{} : la valeur ne peut pas contenir de saut de ligne", o.key))); }
+        if o.quoted && o.value.contains('"') { return Err(crate::Error::Other(format!("{} : la valeur ne peut pas contenir de guillemet (\")", o.key))); }
+    }
+    Ok(())
+}
+
 pub fn serialize(options: &Options) -> String {
     let body = options
         .iter()
@@ -113,5 +126,16 @@ mod tests {
     #[test]
     fn missing_line_is_error() {
         assert!(parse("[x]\n").is_err());
+    }
+
+    #[test]
+    fn validate_rejects_what_would_corrupt_the_file() {
+        let ok = |k: &str, v: &str, q: bool| vec![Opt { key: k.into(), value: v.into(), quoted: q }];
+        assert!(validate(&ok("ServerName", "Mon serveur, le meilleur", true)).is_ok());
+        assert!(validate(&ok("CrossplayPlatforms", "(Steam,Xbox)", false)).is_ok());
+        assert!(validate(&ok("ServerName", "Mon \"serveur\"", true)).is_err());
+        assert!(validate(&ok("ServerName", "a\nb", true)).is_err());
+        assert!(validate(&ok("Bad Key", "x", false)).is_err());
+        assert!(validate(&ok("", "x", false)).is_err());
     }
 }

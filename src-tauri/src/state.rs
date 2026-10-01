@@ -20,6 +20,11 @@ pub struct AppState {
     /// Port sur lequel le serveur mobile écoute actuellement (pour ne pas le relancer inutilement).
     pub remote_port: Mutex<Option<u16>>,
     pub scheduler: Mutex<Scheduler>,
+    /// Dernier build Steam pour lequel une mise à jour a déjà été tentée (une seule tentative par version).
+    pub update_attempted: std::sync::Mutex<Option<String>>,
+    /// Vérifications longues (SteamCMD) en cours en arrière-plan : une seule à la fois chacune.
+    pub bg_update: AtomicBool,
+    pub bg_mods: AtomicBool,
     /// Bot Discord en cours (tâche + réglages avec lesquels il tourne, pour ne le relancer que s'ils changent).
     pub discord: Mutex<Option<(tauri::async_runtime::JoinHandle<()>, palmanager_core::settings::DiscordBotSettings)>>,
     pub profiles: palmanager_core::profiles::ProfileStore,
@@ -56,6 +61,9 @@ impl AppState {
             remote_creds: Default::default(),
             remote_port: Mutex::new(None),
             scheduler: Mutex::new(Scheduler::new()),
+            update_attempted: std::sync::Mutex::new(None),
+            bg_update: AtomicBool::new(false),
+            bg_mods: AtomicBool::new(false),
             discord: Mutex::new(None),
             profiles: palmanager_core::profiles::ProfileStore::new(config_dir.join("profiles")),
             maintenance: AtomicBool::new(false),

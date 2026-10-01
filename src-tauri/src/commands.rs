@@ -12,6 +12,8 @@ pub async fn get_settings(st: S<'_>) -> Result<AppSettings> { Ok(st.settings.rea
 
 #[tauri::command]
 pub async fn save_settings(app: tauri::AppHandle, st: S<'_>, mut settings: AppSettings) -> Result<()> {
+    settings.keep_backend_owned(&*st.settings.read().await);
+    settings.sanitize();
     if settings.remote.enabled { settings.remote.ensure_token()?; }
     settings.save(&st.settings_path)?;
     *st.settings.write().await = settings;
@@ -107,6 +109,7 @@ pub struct WorldSettings {
 
 #[tauri::command]
 pub async fn write_world_settings(st: S<'_>, options: Options) -> Result<()> {
+    ini::validate(&options)?;
     let path = st.settings.read().await.world_settings_path();
     if let Some(dir) = path.parent() { std::fs::create_dir_all(dir)?; }
     if path.exists() { std::fs::copy(&path, path.with_extension("ini.bak"))?; }

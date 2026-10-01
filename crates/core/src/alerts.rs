@@ -66,6 +66,9 @@ impl AlertEngine {
     }
 }
 
+/// Corps JSON d'un message de webhook Discord, sans aucune mention possible.
+pub fn discord_payload(msg: &str) -> serde_json::Value { serde_json::json!({ "content": msg, "allowed_mentions": { "parse": [] } }) }
+
 pub async fn dispatch(cfg: &AlertSettings, event: &Event) -> Result<()> {
     dispatch_text(cfg, &event.message()).await
 }
@@ -73,14 +76,18 @@ pub async fn dispatch(cfg: &AlertSettings, event: &Event) -> Result<()> {
 /// Envoie un texte libre sur les canaux configurés (Discord, ntfy).
 pub async fn dispatch_text(cfg: &AlertSettings, msg: &str) -> Result<()> {
     let http = reqwest::Client::builder().timeout(Duration::from_secs(10)).build()?;
-    let msg = msg.to_string();
+    let msg: String = msg.chars().take(1900).collect(); // Discord refuse plus de 2000 caractères
+    let mut first_err: Option<crate::Error> = None;
     if let Some(url) = cfg.discord_webhook.as_deref().filter(|u| !u.is_empty()) {
-        http.post(url).json(&serde_json::json!({ "content": msg })).send().await?.error_for_status()?;
+        // `allowed_mentions` vide : un pseudo de joueur comme « @everyone » ne doit jamais notifier tout le salon.
+        let body = discord_payload(&msg);
+        if let Err(e) = http.post(url).json(&body).send().await.and_then(|r| r.error_for_status()) { first_err = Some(e.into()); }
     }
+    // Les deux canaux sont toujours tentés : une panne de Discord ne doit pas empêcher la notification ntfy.
     if let Some(url) = cfg.ntfy_url.as_deref().filter(|u| !u.is_empty()) {
-        http.post(url).header("Title", "Palworld").body(msg).send().await?.error_for_status()?;
+        if let Err(e) = http.post(url).header("Title", "Palworld").body(msg).send().await.and_then(|r| r.error_for_status()) { first_err.get_or_insert(e.into()); }
     }
-    Ok(())
+    first_err.map_or(Ok(()), Err)
 }
 
 #[cfg(test)]
@@ -90,6 +97,13 @@ mod tests {
 
     fn snap(running: bool, players: &[&str]) -> Snapshot {
         Snapshot { running, players: players.iter().map(|n| Player { name: n.to_string(), account_name: String::new(), player_id: String::new(), user_id: String::new(), level: 1, ping: 0.0, ..Default::default() }).collect(), ..Default::default() }
+    }
+
+    #[test]
+    fn webhook_payload_never_allows_mentions() {
+        let p = discord_payload("@everyone a rejoint");
+        assert_eq!(p["allowed_mentions"]["parse"].as_array().unwrap().len(), 0);
+        assert_eq!(p["content"], "@everyone a rejoint");
     }
 
     #[test]

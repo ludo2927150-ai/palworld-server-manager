@@ -412,11 +412,21 @@ impl AppSettings {
 
     pub fn load(path: &Path) -> Result<Self> {
         match std::fs::read_to_string(path) {
-            Ok(s) => {
-                let mut v: Self = serde_json::from_str(&s)?;
-                if let Some(store) = crate::secrets::global() { crate::secrets::reveal(store, &mut v); }
-                Ok(v)
-            }
+            Ok(s) => match serde_json::from_str::<Self>(&s) {
+                Ok(mut v) => {
+                    if let Some(store) = crate::secrets::global() { crate::secrets::reveal(store, &mut v); }
+                    v.sanitize();
+                    Ok(v)
+                }
+                Err(e) => {
+                    // Fichier illisible (coupure pendant une écriture, édition à la main) : on le garde à côté et on repart sur
+                    // les réglages par défaut plutôt que de refuser de démarrer.
+                    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+                    let _ = std::fs::copy(path, path.with_extension(format!("json.illisible-{stamp}")));
+                    eprintln!("settings.json illisible ({e}) : copie conservée, réglages par défaut utilisés");
+                    Ok(Self::default())
+                }
+            },
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Self::default()),
             Err(e) => Err(e.into()),
         }
@@ -432,14 +442,101 @@ impl AppSettings {
             }
             None => self.clone(),
         };
-        std::fs::write(path, serde_json::to_string_pretty(&on_disk)?)?;
+        // Écriture atomique : fichier temporaire puis renommage, pour qu'une coupure ne laisse jamais un fichier tronqué.
+        let tmp = path.with_extension("json.tmp");
+        std::fs::write(&tmp, serde_json::to_string_pretty(&on_disk)?)?;
+        std::fs::rename(&tmp, path)?;
         Ok(())
+    }
+
+    /// Ramène à des valeurs saines ce qui ne peut pas l'être (zéro, négatif, absurde) : un réglage faux ne doit jamais
+    /// provoquer une boucle folle (sauvegarde chaque seconde) ni empêcher le démarrage.
+    pub fn sanitize(&mut self) {
+        self.backup.interval_minutes = self.backup.interval_minutes.clamp(1, 7 * 24 * 60);
+        self.backup.retention = self.backup.retention.clamp(1, 1000);
+        self.backup.player_keep = self.backup.player_keep.clamp(1, 200);
+        if self.rest.port == 0 { self.rest.port = 8212; }
+        if self.remote.port < 1024 { self.remote.port = 8765; }
+        self.schedule.announce_minutes.retain(|m| (1..=1440).contains(m));
+        self.schedule.announce_minutes.sort_unstable_by(|a, b| b.cmp(a));
+        self.schedule.announce_minutes.dedup();
+        self.schedule.memory_restart_wait_empty_minutes = self.schedule.memory_restart_wait_empty_minutes.min(240);
+        if let Some(p) = &mut self.schedule.memory_restart_percent { *p = p.clamp(10.0, 100.0); }
+        if let Some(p) = &mut self.alerts.memory_threshold_percent { *p = p.clamp(1.0, 100.0); }
+        self.watchdog.hung_minutes = self.watchdog.hung_minutes.clamp(1, 240);
+        self.watchdog.crash_loop_max = self.watchdog.crash_loop_max.clamp(2, 50);
+        self.watchdog.crash_loop_window_minutes = self.watchdog.crash_loop_window_minutes.clamp(1, 1440);
+        self.server_update.check_every_minutes = self.server_update.check_every_minutes.clamp(15, 7 * 24 * 60);
+        self.server_update.warn_minutes = self.server_update.warn_minutes.min(30);
+        self.mod_automation.check_every_minutes = self.mod_automation.check_every_minutes.clamp(30, 7 * 24 * 60);
+        self.mod_automation.managed_ids.retain(|i| !i.is_empty() && i.len() <= 20 && i.chars().all(|c| c.is_ascii_digit()));
+        self.mod_automation.managed_ids.dedup();
+        self.discord_bot.allowed_user_ids.retain(|i| !i.is_empty() && i.chars().all(|c| c.is_ascii_digit()));
+        self.discord_bot.allowed_user_ids.dedup();
+        for r in &mut self.schedule.rules { r.days.retain(|d| *d < 7); r.days.sort_unstable(); r.days.dedup(); }
+    }
+
+    /// Reprend de `current` ce que seul le programme modifie (invités, jeton, mods gérés, packs, assistant terminé) : une page
+    /// restée ouverte avec une copie ancienne des réglages ne doit pas pouvoir les écraser en enregistrant.
+    pub fn keep_backend_owned(&mut self, current: &AppSettings) {
+        self.remote.guests = current.remote.guests.clone();
+        if !current.remote.token.is_empty() { self.remote.token = current.remote.token.clone(); }
+        self.mod_automation.managed_ids = current.mod_automation.managed_ids.clone();
+        self.mod_automation.packs = current.mod_automation.packs.clone();
+        self.setup_done |= current.setup_done;
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sanitize_clamps_dangerous_values() {
+        let mut s = AppSettings::default();
+        s.backup.interval_minutes = 0; s.backup.retention = 0; s.rest.port = 0; s.remote.port = 80;
+        s.schedule.announce_minutes = vec![5, 0, 15, 5, 99999];
+        s.schedule.memory_restart_percent = Some(0.0);
+        s.watchdog.hung_minutes = 0; s.server_update.check_every_minutes = 1;
+        s.mod_automation.managed_ids = vec!["123".into(), "abc".into(), "".into()];
+        s.discord_bot.allowed_user_ids = vec!["42".into(), "x".into()];
+        s.sanitize();
+        assert_eq!((s.backup.interval_minutes, s.backup.retention, s.rest.port, s.remote.port), (1, 1, 8212, 8765));
+        assert_eq!(s.schedule.announce_minutes, [15, 5]);
+        assert_eq!(s.schedule.memory_restart_percent, Some(10.0));
+        assert_eq!((s.watchdog.hung_minutes, s.server_update.check_every_minutes), (1, 15));
+        assert_eq!(s.mod_automation.managed_ids, ["123"]);
+        assert_eq!(s.discord_bot.allowed_user_ids, ["42"]);
+    }
+
+    #[test]
+    fn corrupt_file_falls_back_to_defaults_and_is_kept_aside() {
+        let dir = std::env::temp_dir().join(format!("pal-corrupt-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("settings.json");
+        std::fs::write(&p, "{ pas du json").unwrap();
+        let s = AppSettings::load(&p).unwrap();
+        assert_eq!(s.backup.retention, AppSettings::default().backup.retention);
+        assert!(std::fs::read_dir(&dir).unwrap().flatten().any(|e| e.file_name().to_string_lossy().contains("illisible")));
+        // une écriture laisse un fichier valide et aucun résidu temporaire
+        s.save(&p).unwrap();
+        assert!(AppSettings::load(&p).is_ok() && !p.with_extension("json.tmp").exists());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn backend_owned_fields_survive_a_stale_save() {
+        let mut current = AppSettings::default();
+        current.remote.guests.push(Guest { id: "g".into(), name: "Bob".into(), token: "t".into(), perms: vec![], expires_at: None, created_at: 0 });
+        current.remote.token = "tok".into();
+        current.mod_automation.managed_ids = vec!["111".into()];
+        current.setup_done = true;
+        let mut stale = AppSettings::default(); // copie ancienne d'une page restée ouverte
+        stale.backup.retention = 7;
+        stale.keep_backend_owned(&current);
+        assert_eq!((stale.remote.guests.len(), stale.remote.token.as_str(), stale.mod_automation.managed_ids.len(), stale.setup_done, stale.backup.retention), (1, "tok", 1, true, 7));
+    }
 
     #[test]
     fn relative_backup_destination_becomes_absolute_and_old_backups_move() {
