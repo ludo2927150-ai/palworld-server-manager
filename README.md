@@ -26,7 +26,7 @@ Application desktop Windows (Tauri 2 + React + Tailwind) pour piloter un serveur
 
 Les versions de test sont publiées dans l'onglet **Releases** du dépôt : téléchargez le fichier `…_x64-setup.exe` et lancez-le (l'application n'est pas signée : SmartScreen demande « Informations complémentaires » puis « Exécuter quand même »). Installation pour l'utilisateur courant, sans droits administrateur.
 
-Pour publier une nouvelle version de test : `git tag v0.1.0-test.2 && git push origin v0.1.0-test.2` (le workflow `Release` fabrique l'installeur).
+Pour publier une nouvelle version de test : poussez un commit dont le message contient `[release]` sur la branche de travail (ou un tag `v*`) ; le workflow `Release` fabrique l'installeur et crée la release.
 
 ## Démarrage rapide
 

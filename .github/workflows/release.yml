@@ -1,12 +1,18 @@
 name: Release
-# Déclenché par un tag `v*` (ex. v0.1.0-test.1) : fabrique l'installeur Windows et le publie dans les « Releases ».
+# Fabrique l'installeur Windows et le publie dans les « Releases ». Déclencheurs :
+#  - un tag `v*` (version officielle) ;
+#  - un commit de la branche de travail dont le message contient « [release] » (version de test numérotée automatiquement) ;
+#  - un lancement manuel (workflow_dispatch).
 on:
   push:
     tags: ["v*"]
+    branches: ["claude/ecstatic-ritchie-flor84"]
+  workflow_dispatch:
 permissions:
   contents: write
 jobs:
   windows:
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release]')
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,8 +25,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "Palworld Server Manager ${{ github.ref_name }}"
+          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v0.1.0-test.{0}', github.run_number) }}
+          releaseCommitish: ${{ github.sha }}
+          releaseName: "Palworld Server Manager ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v0.1.0-test.{0}', github.run_number) }}"
           releaseBody: |
             **Version de test.** Installeur Windows 10/11 (64 bits), installation pour l'utilisateur courant (sans droits administrateur).
 
