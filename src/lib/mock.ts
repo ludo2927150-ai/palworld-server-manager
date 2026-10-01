@@ -1,11 +1,11 @@
 import type { AppSettings, Opt } from "./types";
 
 const settings: AppSettings = {
-  server_dir: "C:\\palworld\\PalServer", steamcmd_path: "steamcmd.exe", remote: { enabled: true, port: 8765, token: "0123456789abcdef0123456789abcdef", guests: [{ id: "g1", name: "Alice", token: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", perms: ["status", "players"], expires_at: null, created_at: 0 }] }, performance: { priority: "normal", cpu_cores: null, memory_limit_gb: null, memory_limit_restart: false },
+  server_dir: "C:\\palworld\\PalServer", steamcmd_path: "steamcmd.exe", announcements: { enabled: true, only_with_players: true, welcome: "Bienvenue {nom} ! Ici : {joueurs}/{max} joueurs.", rules: [{ id: "a1", text: "Pensez à faire une pause et à boire de l'eau !", every_minutes: 30, enabled: true }] }, remote: { enabled: true, port: 8765, token: "0123456789abcdef0123456789abcdef", guests: [{ id: "g1", name: "Alice", token: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", perms: ["status", "players"], expires_at: null, created_at: 0 }] }, performance: { priority: "normal", cpu_cores: null, memory_limit_gb: null, memory_limit_restart: false },
   schedule: { enabled: false, rules: [{ time: "04:00", action: "restart", days: [] }], announce_minutes: [15, 5, 1], memory_restart_percent: null }, launch_args: ["-useperfthreads"], auto_restart: true, close_to_tray: false, start_server_on_launch: false,
   rest: { host: "127.0.0.1", port: 8212, admin_password: "" },
   backup: { enabled: true, interval_minutes: 30, retention: 20, destination: "backups", mirror_destination: null, on_stop: true },
-  alerts: { discord_webhook: null, ntfy_url: null, on_crash: true, on_player_join: true, on_player_leave: false, memory_threshold_percent: 90, cooldown_secs: 300, daily_summary_time: null },
+  alerts: { discord_webhook: null, ntfy_url: null, on_crash: true, on_player_join: true, on_player_leave: false, memory_threshold_percent: 90, cooldown_secs: 300, daily_summary_time: null, desktop: true },
 };
 let world: Opt[] = [
   { key: "ServerName", value: "Default Palworld Server", quoted: true },

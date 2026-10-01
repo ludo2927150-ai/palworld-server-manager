@@ -105,6 +105,7 @@ export default function Settings({ notify }: { notify: (m: string) => void }) {
       <div className="card grid gap-4 md:grid-cols-2">
         <Row label="Webhook Discord"><input className="input" value={s.alerts.discord_webhook ?? ""} onChange={(e) => setS({ ...s, alerts: { ...s.alerts, discord_webhook: nul(e.target.value) } })} /></Row>
         <Row label="URL ntfy (push mobile)"><input className="input" placeholder="https://ntfy.sh/mon-topic" value={s.alerts.ntfy_url ?? ""} onChange={(e) => setS({ ...s, alerts: { ...s.alerts, ntfy_url: nul(e.target.value) } })} /></Row>
+        <Row label="Notifications Windows"><input type="checkbox" checked={s.alerts.desktop} onChange={(e) => setS({ ...s, alerts: { ...s.alerts, desktop: e.target.checked } })} /></Row>
         <Row label="Résumé quotidien à (HH:MM, vide = désactivé)"><input className="input" placeholder="20:00" value={s.alerts.daily_summary_time ?? ""} onChange={(e) => setS({ ...s, alerts: { ...s.alerts, daily_summary_time: nul(e.target.value) } })} /></Row>
         <Row label="Seuil mémoire (%)"><input className="input" type="number" min={1} max={100} value={s.alerts.memory_threshold_percent ?? ""} onChange={(e) => setS({ ...s, alerts: { ...s.alerts, memory_threshold_percent: e.target.value ? +e.target.value : null } })} /></Row>
         <Row label="Alertes"><div className="flex gap-4">

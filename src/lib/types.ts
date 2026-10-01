@@ -9,6 +9,7 @@ export interface Opt { key: string; value: string; quoted: boolean }
 export interface BackupInfo { file_name: string; path: string; size_bytes: number; created: string }
 export interface AppSettings {
   server_dir: string; steamcmd_path: string;
+  announcements: AnnouncementSettings;
   remote: { enabled: boolean; port: number; token: string; guests: Guest[] };
   performance: PerformanceSettings;
   schedule: { enabled: boolean; rules: ScheduleRule[]; announce_minutes: number[]; memory_restart_percent: number | null };
@@ -18,7 +19,7 @@ export interface AppSettings {
   alerts: {
     discord_webhook: string | null; ntfy_url: string | null; on_crash: boolean; on_player_join: boolean;
     on_player_leave: boolean; memory_threshold_percent: number | null; cooldown_secs: number;
-    daily_summary_time: string | null;
+    daily_summary_time: string | null; desktop: boolean;
   };
 }
 export interface Sample { t: number; cpu: number; mem_percent: number; players: number; fps: number }
@@ -44,3 +45,5 @@ export interface ModsState {
   candidates: string[]; download_root: string; mods: ModInfo[];
 }
 export interface Finding { id: string; severity: "critical" | "warning" | "info"; title: string; advice: string; count: number; sample: string }
+export interface AnnouncementRule { id: string; text: string; every_minutes: number; enabled: boolean }
+export interface AnnouncementSettings { enabled: boolean; only_with_players: boolean; welcome: string | null; rules: AnnouncementRule[] }

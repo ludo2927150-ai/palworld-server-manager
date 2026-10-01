@@ -9,6 +9,7 @@ mod tray;
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .on_window_event(|window, event| {
             // « Fermer » réduit dans la zone de notification si l'option est activée.
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

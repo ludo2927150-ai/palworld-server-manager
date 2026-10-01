@@ -2,9 +2,10 @@
 //! redémarrage auto après crash. Émet l'événement `snapshot` vers le frontend à chaque tick.
 
 use crate::state::AppState;
-use palmanager_core::{alerts, backup, perf, server::find_server_pids, history::{PlayerEvent, Sample}, summary, rest::RestClient, schedule::Action, settings::{AppSettings, RuleAction}};
+use palmanager_core::{alerts, announce, backup, perf, server::find_server_pids, history::{PlayerEvent, Sample}, summary, rest::RestClient, schedule::Action, settings::{AppSettings, RuleAction}};
 use std::{collections::HashSet, sync::atomic::Ordering, time::{Duration, Instant}};
 use tauri::{AppHandle, Emitter, Manager};
+use tauri_plugin_notification::NotificationExt;
 
 /// Sauvegarde puis redémarre proprement (save REST → ZIP → arrêt → démarrage).
 async fn maintenance_restart(st: &AppState, s: &AppSettings) {
@@ -32,6 +33,11 @@ async fn scheduled_start(st: &AppState, s: &AppSettings) {
     let _ = st.server.start(s).await;
 }
 
+/// Notification Windows (toast). Les erreurs sont ignorées : une notification manquée ne doit jamais gêner la surveillance.
+fn toast(app: &AppHandle, s: &AppSettings, body: &str) {
+    if s.alerts.desktop { let _ = app.notification().builder().title("Palworld Server Manager").body(body).show(); }
+}
+
 /// Lance une sauvegarde complète hors du thread async ; renvoie le message d'erreur le cas échéant.
 async fn run_backup(s: &AppSettings, label: &'static str) -> Option<String> {
     let s2 = s.clone();
@@ -57,6 +63,8 @@ pub fn spawn(app: AppHandle) {
         let started_at = Instant::now();
         let mut launch_start_done = false;
         let mut prev_running = false;
+        let mut welcome_ready = false;
+        let mut announcer = announce::Announcer::new();
         let mut perf_applied: Option<(String, Vec<u32>)> = None; // (réglages, PID déjà traités)
         let mut last_limit_restart: Option<Instant> = None;
         let mut last_backup_alert: Option<Instant> = None;
@@ -93,8 +101,10 @@ pub fn spawn(app: AppHandle) {
                     let path = s.server_dir.join("Pal/Saved/Logs/Pal.log");
                     let cause = palmanager_core::logs::read_from(&path, None).ok().and_then(|c| palmanager_core::loganalysis::probable_cause(&c.lines));
                     let msg = match cause { Some(c) => format!("{} Cause probable : {c}.", e.message()), None => e.message() };
+                    toast(&app, &s, &msg);
                     let _ = alerts::dispatch_text(&s.alerts, &msg).await;
                 } else {
+                    toast(&app, &s, &e.message());
                     let _ = alerts::dispatch(&s.alerts, e).await;
                 }
                 if matches!(e, alerts::Event::Crash) && s.auto_restart { let _ = st.server.start(&s).await; }
@@ -175,9 +185,29 @@ pub fn spawn(app: AppHandle) {
             }
             let now: HashSet<String> = snap.players.iter().map(|p| p.name.clone()).collect();
             if !snap.running || snap.metrics.is_some() { // ignore les instantanés où l'API REST n'a pas répondu
-                for n in now.difference(&known) { let _ = st.history.add_event(&PlayerEvent { t: ts, name: n.clone(), joined: true }); }
+                for n in now.difference(&known) {
+                    let _ = st.history.add_event(&PlayerEvent { t: ts, name: n.clone(), joined: true });
+                    // Bienvenue aux nouveaux arrivants. Pas au premier instantané après le lancement de l'application :
+                    // les joueurs déjà connectés ne sont pas « nouveaux ».
+                    if welcome_ready && s.announcements.enabled {
+                        if let (Some(tpl), Some(api)) = (s.announcements.welcome.as_deref().filter(|t| !t.trim().is_empty()), &api) {
+                            let max = snap.metrics.as_ref().map(|m| m.maxplayernum);
+                            let _ = api.announce(&announce::render(tpl, Some(n), snap.players.len(), max)).await;
+                        }
+                    }
+                }
                 for n in known.difference(&now) { let _ = st.history.add_event(&PlayerEvent { t: ts, name: n.clone(), joined: false }); }
                 known = now;
+                if snap.running { welcome_ready = true; }
+            }
+
+            // Rappels réguliers (hors maintenance, serveur en ligne et API joignable).
+            if snap.running && !maintenance {
+                if let (Some(api), Some(m)) = (&api, &snap.metrics) {
+                    for text in announcer.due(&s.announcements, ts, snap.players.len(), Some(m.maxplayernum)) {
+                        let _ = api.announce(&text).await;
+                    }
+                }
             }
 
             // Résumé quotidien (Discord / ntfy) à l'heure choisie.

@@ -163,8 +163,12 @@ pub async fn restore_backup(st: S<'_>, path: String) -> Result<()> {
 }
 
 #[tauri::command]
-pub async fn test_alert(st: S<'_>) -> Result<()> {
+pub async fn test_alert(app: tauri::AppHandle, st: S<'_>) -> Result<()> {
+    use tauri_plugin_notification::NotificationExt;
     let cfg = st.settings.read().await.alerts.clone();
+    if cfg.desktop {
+        app.notification().builder().title("Palworld Server Manager").body("Notification de test").show().map_err(|e| Error::Other(e.to_string()))?;
+    }
     alerts::dispatch(&cfg, &alerts::Event::PlayerJoined("Test".into())).await
 }
 

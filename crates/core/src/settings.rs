@@ -14,6 +14,7 @@ pub struct AppSettings {
     pub alerts: AlertSettings,
     pub schedule: ScheduleSettings,
     pub performance: PerformanceSettings,
+    pub announcements: AnnouncementSettings,
     pub remote: RemoteSettings,
     /// Chemin de `steamcmd.exe` (installation et mises à jour du serveur).
     pub steamcmd_path: PathBuf,
@@ -92,6 +93,29 @@ pub struct ScheduleSettings {
     pub memory_restart_percent: Option<f32>,
 }
 
+/// Annonces en jeu : message de bienvenue et rappels réguliers. Variables : `{nom}` (bienvenue), `{joueurs}`, `{max}`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct AnnouncementSettings {
+    pub enabled: bool,
+    /// N'envoie les rappels que s'il y a au moins un joueur connecté.
+    pub only_with_players: bool,
+    pub welcome: Option<String>,
+    pub rules: Vec<AnnouncementRule>,
+}
+
+impl Default for AnnouncementSettings {
+    fn default() -> Self { Self { enabled: false, only_with_players: true, welcome: None, rules: Vec::new() } }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AnnouncementRule {
+    pub id: String,
+    pub text: String,
+    pub every_minutes: u32,
+    pub enabled: bool,
+}
+
 /// Accès à distance (page web mobile servie par l'application). Désactivé par défaut.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -168,6 +192,8 @@ pub struct AlertSettings {
     pub cooldown_secs: u64,
     /// Heure d'envoi du résumé quotidien (`HH:MM`, heure locale) ; `None` = désactivé.
     pub daily_summary_time: Option<String>,
+    /// Notification Windows (toast) pour les mêmes événements, en plus de Discord/ntfy.
+    pub desktop: bool,
 }
 
 impl Default for AppSettings {
@@ -180,6 +206,7 @@ impl Default for AppSettings {
             alerts: AlertSettings::default(),
             schedule: ScheduleSettings::default(),
             performance: PerformanceSettings::default(),
+            announcements: AnnouncementSettings::default(),
             remote: RemoteSettings::default(),
             steamcmd_path: PathBuf::from("steamcmd.exe"),
             auto_restart: true,
@@ -210,7 +237,7 @@ impl Default for AlertSettings {
     fn default() -> Self {
         Self {
             discord_webhook: None, ntfy_url: None, on_crash: true, on_player_join: true,
-            on_player_leave: false, memory_threshold_percent: Some(90.0), cooldown_secs: 300, daily_summary_time: None,
+            on_player_leave: false, memory_threshold_percent: Some(90.0), cooldown_secs: 300, daily_summary_time: None, desktop: true,
         }
     }
 }
