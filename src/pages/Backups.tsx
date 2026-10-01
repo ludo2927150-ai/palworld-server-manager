@@ -46,10 +46,17 @@ function GameAutoSave({ notify }: { notify: (m: string) => void }) {
   );
 }
 
+const ORIGINS: [RegExp, string][] = [
+  [/-arret-externe\.zip$/, "arrêt externe"], [/-arret-force\.zip$/, "arrêt forcé"], [/-arret\.zip$/, "arrêt"],
+  [/-auto\.zip$/, "automatique"], [/-manuel\.zip$/, "manuel"], [/-avant-restauration\.zip$/, "avant restauration"],
+];
+const origin = (name: string) => ORIGINS.find(([re]) => re.test(name))?.[1] ?? null;
+
 export default function Backups({ notify }: { notify: (m: string) => void }) {
   const [list, setList] = useState<BackupInfo[]>([]);
   const [s, setS] = useState<AppSettings | null>(null);
   const [busy, setBusy] = useState(false);
+  const [restoring, setRestoring] = useState<string | null>(null);
 
   const refresh = useCallback(() => api.listBackups().then(setList).catch((e) => notify(String(e))), [notify]);
   useEffect(() => { refresh(); api.getSettings().then(setS).catch((e) => notify(String(e))); }, [refresh, notify]);
@@ -87,7 +94,7 @@ export default function Backups({ notify }: { notify: (m: string) => void }) {
             </Field>
           </div>
           <p className="text-xs text-slate-500">
-            Le nom du fichier indique l'origine : <code>-auto</code> (intervalle), <code>-arret</code> (arrêt ou redémarrage), <code>-arret-externe</code> (serveur fermé hors de l'application), <code>-manuel</code> (bouton).
+            Le nom du fichier indique l'origine : <code>-auto</code> (intervalle), <code>-arret</code> (arrêt ou redémarrage), <code>-arret-externe</code> (serveur fermé hors de l'application), <code>-manuel</code> (bouton), <code>-avant-restauration</code> (état conservé juste avant un retour en arrière).
             Le second emplacement de copie se règle dans « Application ».
           </p>
         </div>
@@ -104,13 +111,25 @@ export default function Backups({ notify }: { notify: (m: string) => void }) {
           </button>
         </div>
         <ul className="divide-y divide-slate-800 text-sm">
-          {list.map((b) => (
-            <li key={b.path} className="flex items-center gap-3 py-2">
-              <span>{b.file_name}</span>
-              <span className="text-slate-500">{(b.size_bytes / 1e6).toFixed(1)} Mo · {new Date(b.created).toLocaleString("fr-FR")}</span>
-              <button className="btn ml-auto" onClick={() => confirm("Restaurer ? L'état actuel sera déplacé en SaveGames.bak.") && api.restoreBackup(b.path).then(() => notify("Restauré")).catch((e) => notify(String(e)))}>Restaurer</button>
-            </li>
-          ))}
+          {list.map((b, i) => {
+            const o = origin(b.file_name);
+            return (
+              <li key={b.path} className="flex flex-wrap items-center gap-3 py-2">
+                <div className="min-w-0">
+                  <div className="truncate">{new Date(b.created).toLocaleString("fr-FR")}{i === 0 && <span className="ml-2 rounded bg-pal-600/30 px-1.5 py-0.5 text-xs text-pal-500">la plus récente</span>}</div>
+                  <div className="truncate text-xs text-slate-500">{b.file_name} · {(b.size_bytes / 1e6).toFixed(1)} Mo{o ? ` · ${o}` : ""}</div>
+                </div>
+                <button className="btn-primary ml-auto" disabled={restoring !== null}
+                  onClick={() => {
+                    if (!confirm(`Revenir à la sauvegarde du ${new Date(b.created).toLocaleString("fr-FR")} ?\n\nSi le serveur tourne, il sera arrêté (l'état actuel est sauvegardé d'abord), la sauvegarde sera restaurée, puis le serveur redémarrera.`)) return;
+                    setRestoring(b.path);
+                    api.restoreBackup(b.path).then(() => { notify("Sauvegarde restaurée"); return refresh(); }).catch((e) => notify(String(e))).finally(() => setRestoring(null));
+                  }}>
+                  {restoring === b.path ? "Restauration…" : "Revenir à celle-ci"}
+                </button>
+              </li>
+            );
+          })}
           {list.length === 0 && <li className="py-2 text-slate-400">Aucune sauvegarde.</li>}
         </ul>
       </div>

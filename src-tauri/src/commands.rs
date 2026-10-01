@@ -77,14 +77,40 @@ pub async fn list_backups(st: S<'_>) -> Result<Vec<BackupInfo>> {
     backup::list(&st.settings.read().await.backup.destination)
 }
 
+/// Revenir à une sauvegarde en un clic : arrête le serveur s'il tourne (ce qui sauvegarde l'état actuel),
+/// restaure l'archive choisie, puis relance le serveur s'il tournait. L'état précédent reste récupérable
+/// (archive `-arret` ou `-avant-restauration`, et dossier `SaveGames.bak`).
 #[tauri::command]
 pub async fn restore_backup(st: S<'_>, path: String) -> Result<()> {
-    if st.server.is_running().await { return Err(Error::Other("arrêtez le serveur avant de restaurer".into())); }
     let s = st.settings.read().await.clone();
     // On n'accepte que des archives situées dans le dossier de sauvegarde configuré.
     let p = std::path::PathBuf::from(&path).canonicalize()?;
     if !p.starts_with(s.backup.destination.canonicalize()?) { return Err(Error::Other("archive hors du dossier de sauvegarde".into())); }
-    backup::restore(&p, &s.save_dir())
+    if st.maintenance.swap(true, Ordering::SeqCst) { return Err(Error::Other("une maintenance est déjà en cours".into())); }
+    let was_running = st.server.is_running().await;
+    let tmp = std::env::temp_dir().join(format!("palworld-restore-{}.zip", chrono::Utc::now().timestamp()));
+    let res: Result<()> = async {
+        // Copie de sûreté : la rotation déclenchée par la sauvegarde d'arrêt pourrait supprimer l'archive choisie.
+        std::fs::copy(&p, &tmp)?;
+        if was_running {
+            st.expected_stop.store(true, Ordering::SeqCst);
+            st.server.stop(&s, Duration::from_secs(60)).await?; // sauvegarde l'état actuel si backup.on_stop
+        }
+        if !(was_running && s.backup.on_stop) {
+            let s2 = s.clone();
+            let _ = tokio::task::spawn_blocking(move || backup::backup_all(&s2, Some("avant-restauration"))).await;
+        }
+        let (t2, dir) = (tmp.clone(), s.save_dir());
+        tokio::task::spawn_blocking(move || backup::restore(&t2, &dir)).await.map_err(|e| Error::Other(e.to_string()))??;
+        Ok(())
+    }.await;
+    let _ = std::fs::remove_file(&tmp);
+    if was_running {
+        st.expected_stop.store(false, Ordering::SeqCst);
+        if res.is_ok() { let _ = st.server.start(&s).await; }
+    }
+    st.maintenance.store(false, Ordering::SeqCst);
+    res
 }
 
 #[tauri::command]

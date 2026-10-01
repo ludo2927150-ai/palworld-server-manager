@@ -103,7 +103,7 @@ impl Default for RestSettings {
 }
 impl Default for BackupSettings {
     fn default() -> Self {
-        Self { enabled: true, interval_minutes: 30, retention: 20, destination: PathBuf::from("backups"), mirror_destination: None, on_stop: true }
+        Self { enabled: true, interval_minutes: 30, retention: 10, destination: PathBuf::from("backups"), mirror_destination: None, on_stop: true }
     }
 }
 impl Default for ScheduleSettings {
