@@ -5,7 +5,9 @@ const settings: AppSettings = {
   schedule: { enabled: false, rules: [{ time: "04:00", action: "restart", days: [] }], announce_minutes: [15, 5, 1], memory_restart_percent: null }, launch_args: ["-useperfthreads"], auto_restart: true, close_to_tray: false, start_server_on_launch: false, setup_done: true,
   rest: { host: "127.0.0.1", port: 8212, admin_password: "" },
   backup: { enabled: true, interval_minutes: 30, retention: 20, destination: "backups", mirror_destination: null, on_stop: true },
-  alerts: { discord_webhook: null, ntfy_url: null, on_crash: true, on_player_join: true, on_player_leave: false, memory_threshold_percent: 90, cooldown_secs: 300, daily_summary_time: null, desktop: true },
+  alerts: { discord_webhook: null, ntfy_url: null, on_crash: true, on_player_join: true, on_player_leave: false, memory_threshold_percent: 90, cooldown_secs: 300, daily_summary_time: null, desktop: true, stale_backup_hours: 6, min_free_disk_gb: 5 },
+  server_update: { enabled: false, check_every_minutes: 60, warn_minutes: 5 },
+  discord_bot: { enabled: false, bot_token: "", allowed_user_ids: [], allow_control: false },
 };
 let world: Opt[] = [
   { key: "ServerName", value: "Default Palworld Server", quoted: true },
@@ -41,6 +43,11 @@ export async function mock<T>(cmd: string, args?: Record<string, unknown>): Prom
     case "detect_setup": return r([["C:/SteamLibrary/steamapps/common/PalServer"], ["C:/steamcmd/steamcmd.exe"]]);
     case "app_version": return r("0.1.0-test.1");
     case "check_update": return r(null);
+    case "verify_backup": return r({ files: 214, bytes: 48_000_000 });
+    case "profiles_list": return r([{ name: "Normal", saved_at: Math.floor(Date.now() / 1000) - 86400, options: 90 }, { name: "Hardcore", saved_at: Math.floor(Date.now() / 1000) - 3600, options: 90 }]);
+    case "profile_save": case "profile_delete": return r(undefined);
+    case "profile_apply": return r(7);
+    case "check_server_update": return r({ installed: "15012345", latest: "15012345", outdated: false });
     case "diagnose": return r([{ id: "exe", label: "PalServer.exe trouvé", ok: true, detail: "" }, { id: "rest_enabled", label: "API REST activée (RESTAPIEnabled=True)", ok: false, detail: "" }]);
     case "get_autostart": return r(false);
     case "network_info": return r({ lan_ip: "192.168.1.42" });

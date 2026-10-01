@@ -65,3 +65,11 @@
 - `Credentials` (partagé, modifiable à chaud) : une invitation créée ou révoquée prend effet immédiatement, sans relancer l'écoute.
 - Chaque route vérifie le droit requis (403 sinon) ; `snapshot` masque les pseudos sans le droit `players` ; `/api/me` indique à la page mobile ce qu'elle peut afficher.
 - Les clés d'invités sont stockées en clair dans `settings.json` (comme celle du propriétaire) ; migration vers le Credential Manager prévue.
+
+## Fiabilité et automatisation
+
+- **Archives** (`backup::verify`) : lecture complète (CRC), refus des archives vides/tronquées/dangereuses. Appelée par « Vérifier », et **avant** d'arrêter le serveur ou de toucher au monde dans une restauration.
+- **Santé des sauvegardes** (`health.rs`) : alerte si la dernière sauvegarde réussie est trop ancienne (serveur en marche) ou si le disque de destination est presque plein ; une alerte par type et par 6 h.
+- **Mise à jour du serveur** : `steamcmd::installed_build` (manifeste `appmanifest_2394010.acf`) comparé à `latest_build` (`app_info_print`). Une seule tentative par build ; préavis aux joueurs ; échec = alerte, jamais de boucle.
+- **Profils** (`profiles.rs`) : jeux de réglages du monde ; l'application ne modifie jamais mots de passe, ports ni API REST.
+- **Bot Discord** (`discord.rs`) : passerelle Discord en connexion sortante (aucun port ouvert), commandes slash, liste blanche d'identifiants Discord (vide = personne), contrôle désactivé par défaut (lecture seule), jeton dans le Gestionnaire d'identifiants. Gère le délai de 3 s de Discord par réponse différée.

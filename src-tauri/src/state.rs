@@ -20,6 +20,9 @@ pub struct AppState {
     /// Port sur lequel le serveur mobile écoute actuellement (pour ne pas le relancer inutilement).
     pub remote_port: Mutex<Option<u16>>,
     pub scheduler: Mutex<Scheduler>,
+    /// Bot Discord en cours (tâche + réglages avec lesquels il tourne, pour ne le relancer que s'ils changent).
+    pub discord: Mutex<Option<(tauri::async_runtime::JoinHandle<()>, palmanager_core::settings::DiscordBotSettings)>>,
+    pub profiles: palmanager_core::profiles::ProfileStore,
     /// Verrou : un seul redémarrage/mise à jour de maintenance à la fois.
     pub maintenance: AtomicBool,
     pub last_snapshot: RwLock<Snapshot>,
@@ -53,6 +56,8 @@ impl AppState {
             remote_creds: Default::default(),
             remote_port: Mutex::new(None),
             scheduler: Mutex::new(Scheduler::new()),
+            discord: Mutex::new(None),
+            profiles: palmanager_core::profiles::ProfileStore::new(config_dir.join("profiles")),
             maintenance: AtomicBool::new(false),
             last_snapshot: RwLock::new(Snapshot::default()),
             expected_stop: AtomicBool::new(false),

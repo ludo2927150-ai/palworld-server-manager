@@ -119,7 +119,11 @@ export default function Backups({ notify }: { notify: (m: string) => void }) {
                   <div className="truncate">{new Date(b.created).toLocaleString("fr-FR")}{i === 0 && <span className="ml-2 rounded bg-pal-600/30 px-1.5 py-0.5 text-xs text-pal-500">la plus récente</span>}</div>
                   <div className="truncate text-xs text-slate-500">{b.file_name} · {(b.size_bytes / 1e6).toFixed(1)} Mo{o ? ` · ${o}` : ""}</div>
                 </div>
-                <button className="btn-primary ml-auto" disabled={restoring !== null}
+                <button className="btn ml-auto" disabled={restoring !== null}
+                  onClick={() => api.verifyBackup(b.path).then((r) => notify(`Sauvegarde saine : ${r.files} fichiers, ${(r.bytes / 1e6).toFixed(1)} Mo`)).catch((e) => notify(`Sauvegarde défectueuse : ${e}`))}>
+                  Vérifier
+                </button>
+                <button className="btn-primary" disabled={restoring !== null}
                   onClick={() => {
                     if (!confirm(`Revenir à la sauvegarde du ${new Date(b.created).toLocaleString("fr-FR")} ?\n\nSi le serveur tourne, il sera arrêté (l'état actuel est sauvegardé d'abord), la sauvegarde sera restaurée, puis le serveur redémarrera.`)) return;
                     setRestoring(b.path);

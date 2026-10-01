@@ -2,7 +2,7 @@
 //! redémarrage auto après crash. Émet l'événement `snapshot` vers le frontend à chaque tick.
 
 use crate::state::AppState;
-use palmanager_core::{alerts, announce, backup, players, perf, server::find_server_pids, history::{PlayerEvent, Sample}, summary, rest::RestClient, schedule::Action, settings::{AppSettings, RuleAction}};
+use palmanager_core::{alerts, health, steamcmd, announce, backup, players, perf, server::find_server_pids, history::{PlayerEvent, Sample}, summary, rest::RestClient, schedule::Action, settings::{AppSettings, RuleAction}};
 use std::{collections::HashSet, sync::atomic::Ordering, time::{Duration, Instant}};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_notification::NotificationExt;
@@ -16,6 +16,22 @@ async fn maintenance_restart(st: &AppState, s: &AppSettings) {
     st.expected_stop.store(false, Ordering::SeqCst);
     let _ = st.server.start(s).await;
     st.maintenance.store(false, Ordering::SeqCst);
+}
+
+/// Mise à jour du serveur : sauvegarde, arrêt, SteamCMD, relance si le serveur tournait. Renvoie le résultat de SteamCMD.
+async fn maintenance_update(st: &AppState, s: &AppSettings) -> palmanager_core::Result<String> {
+    if st.maintenance.swap(true, Ordering::SeqCst) { return Err(palmanager_core::Error::Other("une maintenance est déjà en cours".into())); }
+    let was_running = st.server.is_running().await;
+    if was_running {
+        if let Ok(api) = RestClient::new(&s.rest) { let _ = api.save().await; }
+        st.expected_stop.store(true, Ordering::SeqCst);
+        let _ = st.server.stop(s, Duration::from_secs(60)).await;
+    }
+    let out = steamcmd::update(&s.steamcmd_exe(), &s.server_dir).await;
+    st.expected_stop.store(false, Ordering::SeqCst);
+    if was_running { let _ = st.server.start(s).await; }
+    st.maintenance.store(false, Ordering::SeqCst);
+    out
 }
 
 /// Arrêt planifié : sauvegarde puis arrêt propre. `expected_stop` reste vrai pour éviter une fausse alerte de
@@ -71,6 +87,11 @@ pub fn spawn(app: AppHandle) {
         let mut last_limit_restart: Option<Instant> = None;
         let mut last_backup_alert: Option<Instant> = None;
         let mut last_sample = 0i64;
+        let mut up_since: Option<Instant> = None;
+        let mut last_health_check = Instant::now();
+        let mut health_sent: std::collections::HashMap<&'static str, Instant> = std::collections::HashMap::new();
+        let mut last_update_check: Option<Instant> = None;
+        let mut update_attempted: Option<String> = None;
         let mut known: HashSet<String> = HashSet::new();
         let mut tick = tokio::time::interval(Duration::from_secs(5));
         loop {
@@ -219,6 +240,52 @@ pub fn spawn(app: AppHandle) {
                             let msg = if s.access.kick_message.trim().is_empty() { "Ce serveur est privé (liste blanche)." } else { s.access.kick_message.as_str() };
                             let _ = api.kick(&p.user_id, msg).await;
                         }
+                    }
+                }
+            }
+
+            // Santé des sauvegardes (toutes les 5 min) : trop ancienne, ou disque presque plein. Une alerte par type et par 6 h.
+            if snap.running { if up_since.is_none() { up_since = Some(Instant::now()); } } else { up_since = None; }
+            if last_health_check.elapsed() >= Duration::from_secs(300) {
+                last_health_check = Instant::now();
+                let (dest, cfg) = (s.backup.destination.clone(), s.alerts.clone());
+                let up = up_since.map_or(0, |t| t.elapsed().as_secs() as i64);
+                let (running, backups_on) = (snap.running, s.backup.enabled);
+                let issues = tokio::task::spawn_blocking(move || {
+                    let backups = backup::list(&dest).unwrap_or_default();
+                    let mut v = health::evaluate(&cfg, &backups, chrono::Local::now(), running && backups_on, up, health::free_space(&dest));
+                    v.retain(|i| backups_on || matches!(i, health::Issue::LowDisk { .. }));
+                    v
+                }).await.unwrap_or_default();
+                for i in issues {
+                    if health_sent.get(i.key()).is_some_and(|t| t.elapsed() < Duration::from_secs(6 * 3600)) { continue; }
+                    health_sent.insert(i.key(), Instant::now());
+                    toast(&app, &s, &i.message());
+                    let _ = alerts::dispatch_text(&s.alerts, &i.message()).await;
+                }
+            }
+
+            // Mise à jour automatique du serveur Palworld : build Steam public ≠ build installé.
+            if s.server_update.enabled && !maintenance
+                && last_update_check.map_or(started_at.elapsed() >= Duration::from_secs(120), |t| t.elapsed() >= Duration::from_secs(s.server_update.check_every_minutes.max(15) * 60))
+            {
+                last_update_check = Some(Instant::now());
+                if let Ok(latest) = steamcmd::latest_build(&s.steamcmd_exe()).await {
+                    let installed = steamcmd::installed_build(&s.server_dir);
+                    if installed.as_deref().is_some_and(|i| i != latest) && update_attempted.as_deref() != Some(latest.as_str()) {
+                        update_attempted = Some(latest.clone());
+                        let wait = s.server_update.warn_minutes.min(30);
+                        if snap.running && wait > 0 && !snap.players.is_empty() {
+                            if let Some(api) = &api { let _ = api.announce(&format!("Mise à jour du serveur dans {wait} minute(s).")).await; }
+                            tokio::time::sleep(Duration::from_secs(wait * 60)).await;
+                        }
+                        let _ = alerts::dispatch_text(&s.alerts, &format!("🔄 Mise à jour du serveur Palworld (build {} → {latest}).", installed.unwrap_or_default())).await;
+                        let msg = match maintenance_update(&st, &s).await {
+                            Ok(_) => "✅ Serveur Palworld mis à jour.".to_string(),
+                            Err(e) => format!("❌ Mise à jour du serveur échouée : {e}"),
+                        };
+                        toast(&app, &s, &msg);
+                        let _ = alerts::dispatch_text(&s.alerts, &msg).await;
                     }
                 }
             }

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { GROUPS, PRESETS, SCHEMA } from "../lib/schema";
 import type { Opt } from "../lib/types";
+import Profiles from "./Profiles";
 
 export default function Config({ notify }: { notify: (m: string) => void }) {
   const [orig, setOrig] = useState<Opt[] | null>(null);
@@ -60,6 +61,7 @@ export default function Config({ notify }: { notify: (m: string) => void }) {
           PalWorldSettings.ini est vide (serveur jamais configuré) : les valeurs affichées viennent de DefaultPalWorldSettings.ini. Modifiez ce que vous voulez puis enregistrez pour créer le fichier.
         </div>
       )}
+      <Profiles notify={notify} dirty={changes.length > 0} onApplied={load} />
       <div className="flex flex-wrap items-center gap-2">
         {[...GROUPS, "Avancé"].map((g) => <button key={g} className={g === tab ? "btn-primary" : "btn"} onClick={() => setTab(g)}>{g}</button>)}
       </div>

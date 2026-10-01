@@ -108,11 +108,33 @@ export default function Settings({ notify }: { notify: (m: string) => void }) {
         <Row label="Notifications Windows"><input type="checkbox" checked={s.alerts.desktop} onChange={(e) => setS({ ...s, alerts: { ...s.alerts, desktop: e.target.checked } })} /></Row>
         <Row label="Résumé quotidien à (HH:MM, vide = désactivé)"><input className="input" placeholder="20:00" value={s.alerts.daily_summary_time ?? ""} onChange={(e) => setS({ ...s, alerts: { ...s.alerts, daily_summary_time: nul(e.target.value) } })} /></Row>
         <Row label="Seuil mémoire (%)"><input className="input" type="number" min={1} max={100} value={s.alerts.memory_threshold_percent ?? ""} onChange={(e) => setS({ ...s, alerts: { ...s.alerts, memory_threshold_percent: e.target.value ? +e.target.value : null } })} /></Row>
+        <Row label="Alerte si aucune sauvegarde depuis (heures, vide = désactivé)"><input className="input" type="number" min={1} value={s.alerts.stale_backup_hours ?? ""} onChange={(e) => setS({ ...s, alerts: { ...s.alerts, stale_backup_hours: e.target.value ? +e.target.value : null } })} /></Row>
+        <Row label="Alerte si espace disque libre sous (Go, vide = désactivé)"><input className="input" type="number" min={1} value={s.alerts.min_free_disk_gb ?? ""} onChange={(e) => setS({ ...s, alerts: { ...s.alerts, min_free_disk_gb: e.target.value ? +e.target.value : null } })} /></Row>
         <Row label="Alertes"><div className="flex gap-4">
           {([["on_crash", "Crash"], ["on_player_join", "Connexion"], ["on_player_leave", "Déconnexion"]] as const).map(([k, l]) => (
             <label key={k}><input type="checkbox" checked={s.alerts[k]} onChange={(e) => setS({ ...s, alerts: { ...s.alerts, [k]: e.target.checked } })} /> {l}</label>
           ))}
         </div></Row>
+      </div>
+      <div className="card space-y-3">
+        <h3 className="font-semibold">Mise à jour automatique du serveur Palworld</h3>
+        <p className="text-sm text-slate-400">Compare la version installée à la version publique de Steam (via SteamCMD). Si une mise à jour existe : annonce aux joueurs présents, sauvegarde, arrêt, mise à jour, relance. Une seule tentative par version : en cas d'échec vous êtes alerté, sans boucle.</p>
+        <div className="grid gap-4 md:grid-cols-3">
+          <Row label="Activée"><input type="checkbox" checked={s.server_update.enabled} onChange={(e) => setS({ ...s, server_update: { ...s.server_update, enabled: e.target.checked } })} /></Row>
+          <Row label="Vérifier toutes les (minutes, min. 15)"><input className="input" type="number" min={15} value={s.server_update.check_every_minutes} onChange={(e) => setS({ ...s, server_update: { ...s.server_update, check_every_minutes: +e.target.value } })} /></Row>
+          <Row label="Préavis aux joueurs (minutes, max. 30)"><input className="input" type="number" min={0} max={30} value={s.server_update.warn_minutes} onChange={(e) => setS({ ...s, server_update: { ...s.server_update, warn_minutes: +e.target.value } })} /></Row>
+        </div>
+        <button className="btn" onClick={() => api.checkServerUpdate().then((u) => notify(u.outdated ? `Mise à jour disponible : ${u.installed ?? "?"} → ${u.latest}` : `Serveur à jour (build ${u.latest})`)).catch((e) => notify(String(e)))}>Vérifier maintenant</button>
+      </div>
+      <div className="card space-y-3">
+        <h3 className="font-semibold">Bot Discord (commandes /statut, /joueurs, /sauvegarde, /demarrer, /arreter, /redemarrer, /annonce)</h3>
+        <p className="text-sm text-slate-400">Le bot se connecte à Discord depuis ce PC (aucun port ouvert). Créez une application sur discord.com/developers, ajoutez un Bot, copiez son jeton ici, puis invitez-le sur votre serveur Discord avec la portée « applications.commands ». <strong>Seuls les identifiants Discord listés ci-dessous peuvent l'utiliser</strong> (mode développeur Discord → clic droit sur votre profil → « Copier l'identifiant »). Liste vide = personne.</p>
+        <div className="grid gap-4 md:grid-cols-2">
+          <Row label="Activé"><input type="checkbox" checked={s.discord_bot.enabled} onChange={(e) => setS({ ...s, discord_bot: { ...s.discord_bot, enabled: e.target.checked } })} /></Row>
+          <Row label="Jeton du bot"><input className="input" type="password" autoComplete="off" value={s.discord_bot.bot_token} onChange={(e) => setS({ ...s, discord_bot: { ...s.discord_bot, bot_token: e.target.value } })} /></Row>
+          <Row label="Identifiants Discord autorisés (séparés par des virgules)"><input className="input" defaultValue={s.discord_bot.allowed_user_ids.join(", ")} onBlur={(e) => setS({ ...s, discord_bot: { ...s.discord_bot, allowed_user_ids: e.target.value.split(/[,\s]+/).filter((x) => /^\d+$/.test(x)) } })} /></Row>
+          <Row label="Autoriser le contrôle (démarrer, arrêter, redémarrer, sauvegarder, annoncer) — sinon lecture seule"><input type="checkbox" checked={s.discord_bot.allow_control} onChange={(e) => setS({ ...s, discord_bot: { ...s.discord_bot, allow_control: e.target.checked } })} /></Row>
+        </div>
       </div>
       <div className="flex gap-2">
         <button className="btn-primary" onClick={() => s.schedule.rules.some((r) => !validTime(r.time)) ? notify("Un horaire programmé n'a pas un format HH:MM valide") : api.saveSettings(s).then(() => notify("Paramètres enregistrés")).catch((e) => notify(String(e)))}>Enregistrer</button>

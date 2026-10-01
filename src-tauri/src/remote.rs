@@ -31,6 +31,27 @@ impl Backend for TauriBackend {
 /// (Ré)applique les paramètres d'accès distant. Les clés sont toujours rafraîchies à chaud (invitation créée ou
 /// révoquée = effet immédiat, sans couper les connexions) ; l'écoute n'est relancée que si l'état ou le port change.
 pub async fn apply(app: &AppHandle) {
+    apply_discord(app).await;
+    apply_remote(app).await;
+}
+
+/// (Re)lance ou arrête le bot Discord selon les réglages ; inchangé si les réglages n'ont pas bougé.
+async fn apply_discord(app: &AppHandle) {
+    let st = app.state::<AppState>();
+    let cfg = st.settings.read().await.discord_bot.clone();
+    let wanted = cfg.enabled && !cfg.bot_token.trim().is_empty();
+    let mut cur = st.discord.lock().await;
+    if let Some((_, running_cfg)) = cur.as_ref() {
+        if wanted && *running_cfg == cfg { return; }
+    }
+    if let Some((h, _)) = cur.take() { h.abort(); }
+    if wanted {
+        let h = tauri::async_runtime::spawn(palmanager_core::discord::run(TauriBackend(app.clone()), cfg.clone()));
+        *cur = Some((h, cfg));
+    }
+}
+
+async fn apply_remote(app: &AppHandle) {
     let st = app.state::<AppState>();
     let cfg = st.settings.read().await.remote.clone();
     st.remote_creds.set(if cfg.enabled { remote::credentials(&cfg) } else { Vec::new() });

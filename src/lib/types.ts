@@ -21,7 +21,10 @@ export interface AppSettings {
     discord_webhook: string | null; ntfy_url: string | null; on_crash: boolean; on_player_join: boolean;
     on_player_leave: boolean; memory_threshold_percent: number | null; cooldown_secs: number;
     daily_summary_time: string | null; desktop: boolean;
+    stale_backup_hours: number | null; min_free_disk_gb: number | null;
   };
+  server_update: { enabled: boolean; check_every_minutes: number; warn_minutes: number };
+  discord_bot: { enabled: boolean; bot_token: string; allowed_user_ids: string[]; allow_control: boolean };
 }
 export interface Sample { t: number; cpu: number; mem_percent: number; players: number; fps: number }
 export interface Session { name: string; start: number; end: number | null }
@@ -56,3 +59,6 @@ export interface KnownPlayer {
 }
 export interface BanEntry { user_id: string; name: string; banned_at: number; reason: string | null }
 export interface UpdateInfo { current: string; latest: string; notes: string; url: string; asset: string }
+export interface VerifyReport { files: number; bytes: number }
+export interface ProfileInfo { name: string; saved_at: number; options: number }
+export interface ServerUpdateInfo { installed: string | null; latest: string; outdated: boolean }

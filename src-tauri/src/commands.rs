@@ -141,6 +141,8 @@ pub async fn restore_backup(st: S<'_>, path: String) -> Result<()> {
     let res: Result<()> = async {
         // Copie de sûreté : la rotation déclenchée par la sauvegarde d'arrêt pourrait supprimer l'archive choisie.
         std::fs::copy(&p, &tmp)?;
+        // Archive vérifiée AVANT d'arrêter le serveur ou de toucher au monde actuel.
+        { let t = tmp.clone(); tokio::task::spawn_blocking(move || backup::verify(&t)).await.map_err(|e| Error::Other(e.to_string()))??; }
         if was_running {
             st.expected_stop.store(true, Ordering::SeqCst);
             st.server.stop(&s, Duration::from_secs(60)).await?; // sauvegarde l'état actuel si backup.on_stop
@@ -479,4 +481,52 @@ pub async fn install_update(app: tauri::AppHandle, info: palmanager_core::update
     std::process::Command::new(&path).spawn().map_err(palmanager_core::Error::from)?;
     app.exit(0);
     Ok(())
+}
+
+/// Contrôle qu'une sauvegarde est lisible et complète (sans rien restaurer).
+#[tauri::command]
+pub async fn verify_backup(st: S<'_>, path: String) -> Result<backup::VerifyReport> {
+    let dest = st.settings.read().await.backup.destination.canonicalize()?;
+    let p = std::path::PathBuf::from(&path).canonicalize()?;
+    if !p.starts_with(dest) { return Err(Error::Other("archive hors du dossier de sauvegarde".into())); }
+    tokio::task::spawn_blocking(move || backup::verify(&p)).await.map_err(|e| Error::Other(e.to_string()))?
+}
+
+#[tauri::command]
+pub fn profiles_list(st: S<'_>) -> Vec<palmanager_core::profiles::ProfileInfo> { st.profiles.list() }
+
+/// Enregistre les réglages actuels du monde sous ce nom.
+#[tauri::command]
+pub async fn profile_save(st: S<'_>, name: String) -> Result<()> {
+    let (options, _) = st.settings.read().await.load_world_options()?;
+    st.profiles.save(&name, &options)
+}
+
+/// Applique un profil sur PalWorldSettings.ini (copie `.ini.bak`). Renvoie le nombre de valeurs modifiées ; redémarrage du serveur requis.
+#[tauri::command]
+pub async fn profile_apply(st: S<'_>, name: String) -> Result<usize> {
+    let s = st.settings.read().await.clone();
+    let (mut cur, _) = s.load_world_options()?;
+    let n = palmanager_core::profiles::apply(&mut cur, &st.profiles.load(&name)?);
+    let path = s.world_settings_path();
+    if let Some(dir) = path.parent() { std::fs::create_dir_all(dir)?; }
+    if path.exists() { std::fs::copy(&path, path.with_extension("ini.bak"))?; }
+    std::fs::write(path, ini::serialize(&cur))?;
+    Ok(n)
+}
+
+#[tauri::command]
+pub fn profile_delete(st: S<'_>, name: String) -> Result<()> { st.profiles.delete(&name) }
+
+#[derive(serde::Serialize)]
+pub struct ServerUpdateInfo { pub installed: Option<String>, pub latest: String, pub outdated: bool }
+
+/// Compare le build installé au build public Steam.
+#[tauri::command]
+pub async fn check_server_update(st: S<'_>) -> Result<ServerUpdateInfo> {
+    let s = st.settings.read().await.clone();
+    let latest = steamcmd::latest_build(&s.steamcmd_exe()).await?;
+    let installed = steamcmd::installed_build(&s.server_dir);
+    let outdated = installed.as_deref().is_some_and(|i| i != latest);
+    Ok(ServerUpdateInfo { installed, latest, outdated })
 }
