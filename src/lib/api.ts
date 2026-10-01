@@ -19,6 +19,12 @@ export async function onSnapshot(cb: (s: Snapshot) => void): Promise<() => void>
   return listen<Snapshot>("snapshot", (e) => cb(e.payload));
 }
 
+export async function onInstallLog(cb: (line: string) => void): Promise<() => void> {
+  if (!inTauri) return () => {};
+  const { listen } = await import("@tauri-apps/api/event");
+  return listen<string>("install-log", (e) => cb(e.payload));
+}
+
 export const api = {
   getSettings: () => call<AppSettings>("get_settings"),
   saveSettings: (settings: AppSettings) => call<void>("save_settings", { settings }),
@@ -51,6 +57,11 @@ export const api = {
   profileDelete: (name: string) => call<void>("profile_delete", { name }),
   checkServerUpdate: () => call<ServerUpdateInfo>("check_server_update"),
   useRunningServerDir: () => call<string>("use_running_server_dir"),
+  modPackSave: (name: string) => call<void>("mod_pack_save", { name }),
+  modPackApply: (name: string) => call<string[]>("mod_pack_apply", { name }),
+  modPackDelete: (name: string) => call<void>("mod_pack_delete", { name }),
+  installEverything: (baseDir: string) => call<void>("install_everything", { baseDir }),
+  upnpTest: () => call<string>("upnp_test"),
   diagnose: () => call<Check[]>("diagnose"),
   fixRest: (adminPassword: string) => call<void>("fix_rest", { adminPassword }),
   getAutostart: () => call<boolean>("get_autostart"),

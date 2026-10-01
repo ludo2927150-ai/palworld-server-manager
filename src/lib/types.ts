@@ -13,16 +13,19 @@ export interface AppSettings {
   announcements: AnnouncementSettings;
   remote: { enabled: boolean; port: number; token: string; guests: Guest[] };
   performance: PerformanceSettings;
-  schedule: { enabled: boolean; rules: ScheduleRule[]; announce_minutes: number[]; memory_restart_percent: number | null };
+  schedule: { enabled: boolean; rules: ScheduleRule[]; announce_minutes: number[]; memory_restart_percent: number | null; memory_restart_wait_empty_minutes: number };
   launch_args: string[]; auto_restart: boolean; close_to_tray: boolean; start_server_on_launch: boolean; setup_done: boolean; log_file: string | null; capture_console: boolean;
   rest: { host: string; port: number; admin_password: string };
-  backup: { enabled: boolean; interval_minutes: number; retention: number; destination: string; mirror_destination: string | null; on_stop: boolean };
+  backup: { enabled: boolean; interval_minutes: number; retention: number; destination: string; mirror_destination: string | null; on_stop: boolean; tiered: boolean };
   alerts: {
     discord_webhook: string | null; ntfy_url: string | null; on_crash: boolean; on_player_join: boolean;
     on_player_leave: boolean; memory_threshold_percent: number | null; cooldown_secs: number;
     daily_summary_time: string | null; desktop: boolean;
     stale_backup_hours: number | null; min_free_disk_gb: number | null;
   };
+  watchdog: { enabled: boolean; hung_minutes: number; crash_loop_max: number; crash_loop_window_minutes: number };
+  mod_automation: { managed_ids: string[]; auto_update: boolean; check_every_minutes: number; packs: { name: string; package_names: string[] }[] };
+  upnp: { enabled: boolean };
   server_update: { enabled: boolean; check_every_minutes: number; warn_minutes: number };
   discord_bot: { enabled: boolean; bot_token: string; allowed_user_ids: string[]; allow_control: boolean };
 }
@@ -32,7 +35,7 @@ export interface LogChunk { lines: string[]; offset: number; source: string; hin
 export interface Check { id: string; label: string; ok: boolean; detail: string }
 export interface WorldSettings { options: Opt[]; from_default: boolean }
 export type RuleAction = "start" | "stop" | "restart";
-export interface ScheduleRule { time: string; action: RuleAction; days: number[] }
+export interface ScheduleRule { time: string; action: RuleAction; days: number[]; profile: string | null }
 export type Priority = "belownormal" | "normal" | "abovenormal" | "high";
 export interface PerformanceSettings { priority: Priority; cpu_cores: number[] | null; memory_limit_gb: number | null; memory_limit_restart: boolean }
 export interface SystemInfo { cpu_cores: number; total_memory_bytes: number }

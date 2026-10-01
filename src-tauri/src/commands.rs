@@ -469,14 +469,14 @@ pub fn app_version() -> String { palmanager_core::update::current_version_string
 /// Interroge les Releases GitHub ; `None` si l'application est à jour.
 #[tauri::command]
 pub async fn check_update() -> Result<Option<palmanager_core::update::UpdateInfo>> {
-    Ok(palmanager_core::update::check().await?)
+    palmanager_core::update::check().await
 }
 
 /// Télécharge l'installeur, le lance puis ferme l'application (l'installeur remplace les fichiers).
 /// Refusé en développement : la mise à jour passe alors par `git pull`.
 #[tauri::command]
 pub async fn install_update(app: tauri::AppHandle, info: palmanager_core::update::UpdateInfo) -> Result<()> {
-    if cfg!(debug_assertions) { return Err(palmanager_core::Error::Other("mise à jour automatique indisponible en mode développement".into()).into()); }
+    if cfg!(debug_assertions) { return Err(palmanager_core::Error::Other("mise à jour automatique indisponible en mode développement".into())); }
     let path = palmanager_core::update::download(&info).await?;
     std::process::Command::new(&path).spawn().map_err(palmanager_core::Error::from)?;
     app.exit(0);

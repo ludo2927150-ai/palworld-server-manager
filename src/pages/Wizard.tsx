@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api } from "../lib/api";
+import { api, onInstallLog } from "../lib/api";
 import { t } from "../lib/i18n";
 import type { AppSettings, Check } from "../lib/types";
 
@@ -12,6 +12,9 @@ export default function Wizard({ onClose, notify }: { onClose: () => void; notif
   const [cmds, setCmds] = useState<string[]>([]);
   const [pw, setPw] = useState("");
   const [checks, setChecks] = useState<Check[] | null>(null);
+  const [base, setBase] = useState("C:\\palworld");
+  const [installing, setInstalling] = useState(false);
+  const [installLog, setInstallLog] = useState<string[]>([]);
 
   useEffect(() => {
     api.getSettings().then(setS).catch((e) => notify(String(e)));
@@ -36,7 +39,21 @@ export default function Wizard({ onClose, notify }: { onClose: () => void; notif
 
         {step === 0 && (
           <div className="space-y-2 text-sm">
-            <p className="text-slate-400">Le dossier qui contient <code>PalServer.exe</code>.</p>
+            <div className="rounded-lg border border-slate-700 p-3 space-y-2">
+              <strong>Pas encore de serveur ? Tout installer automatiquement</strong>
+              <p className="text-slate-400">Télécharge SteamCMD puis le serveur Palworld (plusieurs Go) dans le dossier choisi, et configure l'application. Compter 12 Go libres.</p>
+              <div className="flex gap-2">
+                <input className="input" value={base} onChange={(e) => setBase(e.target.value)} placeholder="C:\palworld" />
+                <button className="btn-primary" disabled={installing || !base.trim()} onClick={() => {
+                  setInstalling(true); setInstallLog([]);
+                  let un = () => {};
+                  onInstallLog((l) => setInstallLog((cur) => [...cur.slice(-40), l])).then((f) => { un = f; });
+                  api.installEverything(base).then(() => { notify("Serveur installé"); api.getSettings().then(setS); }).catch((e) => notify(String(e))).finally(() => { setInstalling(false); un(); });
+                }}>{installing ? "Installation…" : "Tout installer"}</button>
+              </div>
+              {installLog.length > 0 && <pre className="max-h-40 overflow-y-auto rounded bg-black/40 p-2 text-xs">{installLog.join("\n")}</pre>}
+            </div>
+            <p className="text-slate-400">Ou, si le serveur est déjà installé : le dossier qui contient <code>PalServer.exe</code>.</p>
             {dirs.length > 0 && <div className="space-y-1">{dirs.map((d) => <button key={d} className={`block w-full rounded border px-3 py-2 text-left ${s.server_dir === d ? "border-pal-500" : "border-slate-700"}`} onClick={() => patch({ server_dir: d })}>{d}</button>)}</div>}
             {dirs.length === 0 && <p className="text-amber-300">{t("Aucune installation détectée automatiquement. Saisissez le chemin, ou installez le serveur via SteamCMD (onglet Application).")}</p>}
             <input className="input" value={s.server_dir} onChange={(e) => patch({ server_dir: e.target.value })} placeholder="C:\steamcmd\steamapps\common\PalServer" />

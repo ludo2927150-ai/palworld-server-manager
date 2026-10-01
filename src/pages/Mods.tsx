@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../lib/api";
-import type { ModsState } from "../lib/types";
+import type { AppSettings, ModsState } from "../lib/types";
 
 const workshopUrl = (id: string) => `https://steamcommunity.com/sharedfiles/filedetails/?id=${id}`;
 
@@ -11,6 +11,10 @@ export default function Mods({ notify }: { notify: (m: string) => void }) {
   const [busy, setBusy] = useState(false);
   const [changed, setChanged] = useState(false); // un changement attend un redémarrage du serveur
   const [allowClient, setAllowClient] = useState<boolean | null>(null);
+  const [packs, setPacks] = useState<AppSettings["mod_automation"]["packs"]>([]);
+  const [packName, setPackName] = useState("");
+  const loadPacks = useCallback(() => { api.getSettings().then((s) => setPacks(s.mod_automation.packs)).catch(() => {}); }, []);
+  useEffect(() => { loadPacks(); }, [loadPacks]);
 
   const load = useCallback(() => {
     api.modsState().then((s) => { setSt(s); setRootInput(s.workshop_root ?? ""); }).catch((e) => notify(String(e)));
@@ -39,6 +43,25 @@ export default function Mods({ notify }: { notify: (m: string) => void }) {
 
   return (
     <div className="space-y-4">
+      <div className="card space-y-3">
+        <h2 className="font-semibold">Packs de mods</h2>
+        <p className="text-sm text-slate-400">Enregistrez l'ensemble des mods activés sous un nom (« Vanilla », « Avec mods »…) et basculez en un clic. Un pack n'active que les mods présents et compatibles serveur ; le serveur doit être redémarré. Astuce : un pack « Vanilla » vide s'enregistre en désactivant d'abord tous les mods.</p>
+        <ul className="divide-y divide-slate-800 text-sm">
+          {packs.map((p) => (
+            <li key={p.name} className="flex flex-wrap items-center gap-3 py-2">
+              <div><strong>{p.name}</strong><div className="text-xs text-slate-500">{p.package_names.length ? p.package_names.join(", ") : "aucun mod"}</div></div>
+              <button className="btn-primary ml-auto" disabled={busy} onClick={() => confirm(`Activer le pack « ${p.name} » ?`) && run(() => api.modPackApply(p.name).then((missing) => { if (missing.length) notify(`Mods introuvables ou incompatibles : ${missing.join(", ")}`); }), `Pack « ${p.name} » appliqué`)}>Appliquer</button>
+              <button className="btn" disabled={busy} onClick={() => run(() => api.modPackSave(p.name).then(loadPacks), "Pack mis à jour avec les mods actuels", false)}>Remplacer par l'actuel</button>
+              <button className="btn-danger" disabled={busy} onClick={() => confirm(`Supprimer le pack « ${p.name} » ?`) && run(() => api.modPackDelete(p.name).then(loadPacks), undefined, false)}>Supprimer</button>
+            </li>
+          ))}
+          {packs.length === 0 && <li className="py-2 text-slate-400">Aucun pack.</li>}
+        </ul>
+        <div className="flex gap-2">
+          <input className="input max-w-xs" placeholder="Nom du pack" value={packName} onChange={(e) => setPackName(e.target.value)} />
+          <button className="btn" disabled={busy || !packName.trim()} onClick={() => run(() => api.modPackSave(packName).then(() => { setPackName(""); loadPacks(); }), "Pack enregistré", false)}>Enregistrer les mods actifs sous ce nom</button>
+        </div>
+      </div>
       {changed && (
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-500/50 bg-amber-500/10 p-3 text-sm text-amber-200" role="status">
           Les mods sont lus au démarrage du serveur : redémarrez-le pour appliquer les changements.

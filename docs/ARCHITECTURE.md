@@ -73,3 +73,13 @@
 - **Mise à jour du serveur** : `steamcmd::installed_build` (manifeste `appmanifest_2394010.acf`) comparé à `latest_build` (`app_info_print`). Une seule tentative par build ; préavis aux joueurs ; échec = alerte, jamais de boucle.
 - **Profils** (`profiles.rs`) : jeux de réglages du monde ; l'application ne modifie jamais mots de passe, ports ni API REST.
 - **Bot Discord** (`discord.rs`) : passerelle Discord en connexion sortante (aucun port ouvert), commandes slash, liste blanche d'identifiants Discord (vide = personne), contrôle désactivé par défaut (lecture seule), jeton dans le Gestionnaire d'identifiants. Gère le délai de 3 s de Discord par réponse différée.
+
+## Automatisation (src-tauri/src/automation.rs, supervisor.rs)
+
+- **Cycle sûr** (`guarded_cycle`) : sauvegarde de sûreté → arrêt propre → changement (profil, mise à jour SteamCMD) → démarrage → contrôle (processus vivant + API REST) pendant 6 min. Sinon : (1) désactivation des mods suspects (ou de tous), (2) restauration du monde depuis la sauvegarde de sûreté + réglages de mods d'origine. Tous les redémarrages automatiques (horaires, mémoire, gel, mises à jour, mods) passent par là. Une mise à jour de binaire du serveur ne peut pas être annulée (SteamCMD) : le retour arrière protège le monde et les mods.
+- **Surveillance** (`core/watchdog.rs`, logique pure) : gel = API muette N min après avoir répondu au moins une fois (jamais si l'API est désactivée) ; boucle de crashs = X crashs en Y min → relance auto arrêtée jusqu'à un démarrage manuel.
+- **Mods gérés** : `managed_ids` téléchargés et vérifiés par empreinte de dossier (`mods::dir_signature`) ; un changement sur un serveur en marche déclenche un cycle sûr avec préavis. Packs = ensembles de mods activables d'un clic (`mods::apply_pack`).
+- **Planning + profils** : une règle peut appliquer un profil avant son exécution (« XP ×3 le week-end »).
+- **Sauvegardes** : rétention par paliers (`backup::plan_tiered`) en option ; chaque archive est relue (`verify`) juste après création, supprimée et signalée si défectueuse.
+- **Installation depuis zéro** (`core/install.rs`) : seule adresse téléchargée = steamcmd.zip officiel de Valve.
+- **UPnP** (`core/upnp.rs`) : ouvre uniquement le port UDP de jeu, désactivé par défaut, bail d'1 h renouvelé toutes les 20 min tant que le serveur tourne.

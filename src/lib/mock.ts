@@ -2,10 +2,13 @@ import type { AppSettings, Opt } from "./types";
 
 const settings: AppSettings = {
   server_dir: "C:\\palworld\\PalServer", steamcmd_path: "steamcmd.exe", access: { whitelist_enabled: false, allowed: [{ user_id: "steam_1", name: "Alice" }], kick_message: "" }, announcements: { enabled: true, only_with_players: true, welcome: "Bienvenue {nom} ! Ici : {joueurs}/{max} joueurs.", rules: [{ id: "a1", text: "Pensez à faire une pause et à boire de l'eau !", every_minutes: 30, enabled: true }] }, remote: { enabled: true, port: 8765, token: "0123456789abcdef0123456789abcdef", guests: [{ id: "g1", name: "Alice", token: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", perms: ["status", "players"], expires_at: null, created_at: 0 }] }, performance: { priority: "normal", cpu_cores: null, memory_limit_gb: null, memory_limit_restart: false },
-  schedule: { enabled: false, rules: [{ time: "04:00", action: "restart", days: [] }], announce_minutes: [15, 5, 1], memory_restart_percent: null }, launch_args: ["-useperfthreads"], auto_restart: true, close_to_tray: false, start_server_on_launch: false, setup_done: true, log_file: null, capture_console: true,
+  schedule: { enabled: false, rules: [{ time: "04:00", action: "restart", days: [], profile: null }], announce_minutes: [15, 5, 1], memory_restart_percent: null, memory_restart_wait_empty_minutes: 0 }, launch_args: ["-useperfthreads"], auto_restart: true, close_to_tray: false, start_server_on_launch: false, setup_done: true, log_file: null, capture_console: true,
   rest: { host: "127.0.0.1", port: 8212, admin_password: "" },
-  backup: { enabled: true, interval_minutes: 30, retention: 20, destination: "backups", mirror_destination: null, on_stop: true },
+  backup: { enabled: true, interval_minutes: 30, retention: 20, destination: "backups", mirror_destination: null, on_stop: true, tiered: false },
   alerts: { discord_webhook: null, ntfy_url: null, on_crash: true, on_player_join: true, on_player_leave: false, memory_threshold_percent: 90, cooldown_secs: 300, daily_summary_time: null, desktop: true, stale_backup_hours: 6, min_free_disk_gb: 5 },
+  watchdog: { enabled: true, hung_minutes: 5, crash_loop_max: 3, crash_loop_window_minutes: 10 },
+  mod_automation: { managed_ids: [], auto_update: false, check_every_minutes: 120, packs: [] },
+  upnp: { enabled: false },
   server_update: { enabled: false, check_every_minutes: 60, warn_minutes: 5 },
   discord_bot: { enabled: false, bot_token: "", allowed_user_ids: [], allow_control: false },
 };
@@ -49,6 +52,10 @@ export async function mock<T>(cmd: string, args?: Record<string, unknown>): Prom
     case "profile_apply": return r(7);
     case "check_server_update": return r({ installed: "15012345", latest: "15012345", outdated: false });
     case "use_running_server_dir": return r("C:/palworld/PalServer");
+    case "mod_pack_save": case "mod_pack_delete": return r(undefined);
+    case "mod_pack_apply": return r([]);
+    case "install_everything": return r(undefined);
+    case "upnp_test": return r("Port UDP 8211 ouvert (démo)");
     case "diagnose": return r([{ id: "exe", label: "PalServer.exe trouvé", ok: true, detail: "" }, { id: "rest_enabled", label: "API REST activée (RESTAPIEnabled=True)", ok: false, detail: "" }]);
     case "get_autostart": return r(false);
     case "network_info": return r({ lan_ip: "192.168.1.42" });

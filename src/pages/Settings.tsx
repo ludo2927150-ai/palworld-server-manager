@@ -10,7 +10,7 @@ const ACTIONS: { v: RuleAction; label: string }[] = [
 const validTime = (t: string) => /^([01]?\d|2[0-3]):[0-5]\d$/.test(t.trim());
 const padTime = (t: string) => (validTime(t) ? t.trim().replace(/^(\d):/, "0$1:") : t);
 
-function ScheduleEditor({ s, setS }: { s: AppSettings; setS: (v: AppSettings) => void }) {
+function ScheduleEditor({ s, setS, profiles }: { s: AppSettings; setS: (v: AppSettings) => void; profiles: string[] }) {
   const set = (rules: ScheduleRule[]) => setS({ ...s, schedule: { ...s.schedule, rules } });
   const upd = (i: number, patch: Partial<ScheduleRule>) => set(s.schedule.rules.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   const toggleDay = (i: number, d: number) => {
@@ -39,6 +39,13 @@ function ScheduleEditor({ s, setS }: { s: AppSettings; setS: (v: AppSettings) =>
           <select className="input !w-40" value={r.action} aria-label="Action" onChange={(e) => upd(i, { action: e.target.value as RuleAction })}>
             {ACTIONS.map((a) => <option key={a.v} value={a.v}>{a.label}</option>)}
           </select>
+          {r.action !== "stop" && (
+            <select className="input !w-44" value={r.profile ?? ""} aria-label="Profil de configuration" title="Profil appliqué juste avant l'exécution"
+              onChange={(e) => upd(i, { profile: e.target.value || null })}>
+              <option value="">Profil : inchangé</option>
+              {profiles.map((p) => <option key={p} value={p}>Profil : {p}</option>)}
+            </select>
+          )}
           <div className="flex gap-1" role="group" aria-label="Jours">
             {DAYS.map((d, di) => {
               const on = r.days.length === 0 || r.days.includes(di);
@@ -51,7 +58,7 @@ function ScheduleEditor({ s, setS }: { s: AppSettings; setS: (v: AppSettings) =>
           <button type="button" className="btn ml-auto" onClick={() => set(s.schedule.rules.filter((_, j) => j !== i))}>Supprimer</button>
         </div>
       ))}
-      <button type="button" className="btn" onClick={() => set([...s.schedule.rules, { time: "04:00", action: "restart", days: [] }])}>+ Ajouter un horaire</button>
+      <button type="button" className="btn" onClick={() => set([...s.schedule.rules, { time: "04:00", action: "restart", days: [], profile: null }])}>+ Ajouter un horaire</button>
     </div>
   );
 }
@@ -62,6 +69,8 @@ const Row = ({ label, children }: { label: string; children: React.ReactNode }) 
 
 export default function Settings({ notify }: { notify: (m: string) => void }) {
   const [s, setS] = useState<AppSettings | null>(null);
+  const [profiles, setProfiles] = useState<string[]>([]);
+  useEffect(() => { api.profiles().then((l) => setProfiles(l.map((p) => p.name))).catch(() => {}); }, []);
   const [autostart, setAutostart] = useState(false);
   const [autostartError, setAutostartError] = useState<string | null>(null);
   useEffect(() => { api.getAutostart().then(setAutostart).catch((e) => setAutostartError(String(e))); }, []);
@@ -91,16 +100,18 @@ export default function Settings({ notify }: { notify: (m: string) => void }) {
         <Row label="Fermer la fenêtre = réduire dans la zone de notification"><input type="checkbox" checked={s.close_to_tray} onChange={(e) => setS({ ...s, close_to_tray: e.target.checked })} /></Row>
         <Row label="Redémarrage auto après crash"><input type="checkbox" checked={s.auto_restart} onChange={(e) => setS({ ...s, auto_restart: e.target.checked })} /></Row>
       </div>
-      <ScheduleEditor s={s} setS={setS} />
+      <ScheduleEditor s={s} setS={setS} profiles={profiles} />
       <div className="card grid gap-4 md:grid-cols-2">
         <Row label="Chemin de steamcmd.exe"><input className="input" value={s.steamcmd_path} onChange={(e) => setS({ ...s, steamcmd_path: e.target.value })} /></Row>
         <Row label="Annonces (minutes avant, ex. 15, 5, 1)"><input className="input" value={s.schedule.announce_minutes.join(", ")} onChange={(e) => setS({ ...s, schedule: { ...s.schedule, announce_minutes: e.target.value.split(",").map((t) => parseInt(t, 10)).filter((n) => n > 0) } })} /></Row>
+        <Row label="Mémoire : attendre que le serveur soit vide, au plus (minutes, 0 = redémarrer après 1 min de préavis)"><input className="input" type="number" min={0} max={240} value={s.schedule.memory_restart_wait_empty_minutes} onChange={(e) => setS({ ...s, schedule: { ...s.schedule, memory_restart_wait_empty_minutes: Math.max(0, +e.target.value || 0) } })} /></Row>
         <Row label="Redémarrer si RAM ≥ (%) — vide = jamais"><input className="input" type="number" min={1} max={100} value={s.schedule.memory_restart_percent ?? ""} onChange={(e) => setS({ ...s, schedule: { ...s.schedule, memory_restart_percent: e.target.value ? +e.target.value : null } })} /></Row>
       </div>
       <div className="card grid gap-4 md:grid-cols-2">
         <Row label="Backup automatique"><input type="checkbox" checked={s.backup.enabled} onChange={(e) => setS({ ...s, backup: { ...s.backup, enabled: e.target.checked } })} /></Row>
         <Row label="Intervalle (minutes)"><input className="input" type="number" min={1} value={s.backup.interval_minutes} onChange={(e) => setS({ ...s, backup: { ...s.backup, interval_minutes: +e.target.value } })} /></Row>
-        <Row label="Nombre de backups conservés"><input className="input" type="number" min={1} value={s.backup.retention} onChange={(e) => setS({ ...s, backup: { ...s.backup, retention: +e.target.value } })} /></Row>
+        <Row label="Rétention par paliers (24 h complètes, puis 1 par jour sur 7 jours, puis 1 par semaine sur 4 semaines) au lieu d'un nombre fixe"><input type="checkbox" checked={s.backup.tiered} onChange={(e) => setS({ ...s, backup: { ...s.backup, tiered: e.target.checked } })} /></Row>
+        <Row label="Nombre de backups conservés (sans paliers)"><input className="input" type="number" min={1} value={s.backup.retention} onChange={(e) => setS({ ...s, backup: { ...s.backup, retention: +e.target.value } })} /></Row>
         <Row label="Second emplacement (copie de chaque sauvegarde, ex. autre disque)"><input className="input" placeholder="D:\Sauvegardes\Palworld" value={s.backup.mirror_destination ?? ""} onChange={(e) => setS({ ...s, backup: { ...s.backup, mirror_destination: e.target.value.trim() ? e.target.value : null } })} /></Row>
         <Row label="Dossier de destination"><input className="input" value={s.backup.destination} onChange={(e) => setS({ ...s, backup: { ...s.backup, destination: e.target.value } })} /></Row>
       </div>
@@ -137,6 +148,36 @@ export default function Settings({ notify }: { notify: (m: string) => void }) {
           <Row label="Identifiants Discord autorisés (séparés par des virgules)"><input className="input" defaultValue={s.discord_bot.allowed_user_ids.join(", ")} onBlur={(e) => setS({ ...s, discord_bot: { ...s.discord_bot, allowed_user_ids: e.target.value.split(/[,\s]+/).filter((x) => /^\d+$/.test(x)) } })} /></Row>
           <Row label="Autoriser le contrôle (démarrer, arrêter, redémarrer, sauvegarder, annoncer) — sinon lecture seule"><input type="checkbox" checked={s.discord_bot.allow_control} onChange={(e) => setS({ ...s, discord_bot: { ...s.discord_bot, allow_control: e.target.checked } })} /></Row>
         </div>
+      </div>
+      <div className="card space-y-3">
+        <h3 className="font-semibold">Auto-réparation</h3>
+        <p className="text-sm text-slate-400">Si le processus tourne mais que l'API ne répond plus (après avoir répondu au moins une fois), le serveur est redémarré. Après plusieurs crashs rapprochés, la relance automatique s'arrête et vous êtes alerté, au lieu de boucler. Tout redémarrage automatique est suivi d'un contrôle : si le serveur ne répond pas, les mods fautifs sont désactivés, puis le monde est restauré depuis la sauvegarde de sûreté.</p>
+        <div className="grid gap-4 md:grid-cols-4">
+          <Row label="Activée"><input type="checkbox" checked={s.watchdog.enabled} onChange={(e) => setS({ ...s, watchdog: { ...s.watchdog, enabled: e.target.checked } })} /></Row>
+          <Row label="Gel : redémarrer après (minutes)"><input className="input" type="number" min={1} value={s.watchdog.hung_minutes} onChange={(e) => setS({ ...s, watchdog: { ...s.watchdog, hung_minutes: Math.max(1, +e.target.value || 1) } })} /></Row>
+          <Row label="Boucle de crashs : nombre"><input className="input" type="number" min={2} value={s.watchdog.crash_loop_max} onChange={(e) => setS({ ...s, watchdog: { ...s.watchdog, crash_loop_max: Math.max(2, +e.target.value || 2) } })} /></Row>
+          <Row label="…en (minutes)"><input className="input" type="number" min={1} value={s.watchdog.crash_loop_window_minutes} onChange={(e) => setS({ ...s, watchdog: { ...s.watchdog, crash_loop_window_minutes: Math.max(1, +e.target.value || 1) } })} /></Row>
+        </div>
+      </div>
+      <div className="card space-y-3">
+        <h3 className="font-semibold">Mods automatiques</h3>
+        <p className="text-sm text-slate-400">Les mods ajoutés depuis l'onglet Mods sont « gérés » : téléchargés et mis à jour via SteamCMD. Quand un mod change, le serveur est redémarré proprement (préavis, sauvegarde, contrôle). Certains mods du Workshop refusent le téléchargement anonyme : abonnez-vous-y alors depuis Steam.</p>
+        <div className="grid gap-4 md:grid-cols-3">
+          <Row label="Mise à jour automatique"><input type="checkbox" checked={s.mod_automation.auto_update} onChange={(e) => setS({ ...s, mod_automation: { ...s.mod_automation, auto_update: e.target.checked } })} /></Row>
+          <Row label="Vérifier toutes les (minutes, min. 30)"><input className="input" type="number" min={30} value={s.mod_automation.check_every_minutes} onChange={(e) => setS({ ...s, mod_automation: { ...s.mod_automation, check_every_minutes: Math.max(30, +e.target.value || 30) } })} /></Row>
+          <Row label="Mods gérés"><span className="text-slate-300">{s.mod_automation.managed_ids.length ? s.mod_automation.managed_ids.join(", ") : "aucun"}</span></Row>
+        </div>
+      </div>
+      <div className="card space-y-3">
+        <h3 className="font-semibold">Ouverture automatique du port de jeu (UPnP)</h3>
+        <p className="text-sm text-amber-300">Attention : cette option ouvre le port UDP du jeu (8211 par défaut) de votre box vers Internet pour que vos amis puissent se connecter. Elle n'ouvre jamais l'API REST ni l'accès mobile. Désactivée par défaut ; elle ne fonctionne que si UPnP est activé sur votre box. Le serveur est alors joignable par n'importe qui connaissant votre adresse : pensez au mot de passe serveur ou à la liste blanche.</p>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={s.upnp.enabled} onChange={(e) => {
+            if (e.target.checked && !confirm("Ouvrir le port de jeu de votre box vers Internet ?\n\nLe serveur de jeu sera joignable depuis Internet. L'API REST et l'accès mobile ne sont pas concernés.")) return;
+            setS({ ...s, upnp: { enabled: e.target.checked } });
+          }} /> Ouvrir le port de jeu automatiquement
+        </label>
+        <button className="btn" onClick={() => api.upnpTest().then((m) => notify(m)).catch((e) => notify(String(e)))}>Tester maintenant (ouvre le port une fois)</button>
       </div>
       <div className="flex gap-2">
         <button className="btn-primary" onClick={() => s.schedule.rules.some((r) => !validTime(r.time)) ? notify("Un horaire programmé n'a pas un format HH:MM valide") : api.saveSettings(s).then(() => notify("Paramètres enregistrés")).catch((e) => notify(String(e)))}>Enregistrer</button>

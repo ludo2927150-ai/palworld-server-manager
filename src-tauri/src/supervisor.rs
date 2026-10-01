@@ -193,7 +193,7 @@ pub fn spawn(app: AppHandle) {
             // au plus un redémarrage par 30 minutes pour éviter une boucle si la limite est trop basse.
             if let (Some(limit), true, false) = (s.performance.memory_limit_gb, snap.running, maintenance) {
                 let used_gb = snap.memory_bytes as f64 / 1e9;
-                if used_gb >= limit as f64 && last_limit_restart.map_or(true, |t| t.elapsed() >= Duration::from_secs(1800)) {
+                if used_gb >= limit as f64 && last_limit_restart.is_none_or(|t| t.elapsed() >= Duration::from_secs(1800)) {
                     last_limit_restart = Some(Instant::now());
                     let txt = format!("🟠 RAM du serveur : {used_gb:.1} Go (limite {limit:.1} Go){}", if s.performance.memory_limit_restart { " — redémarrage dans 1 minute." } else { "." });
                     let _ = alerts::dispatch_text(&s.alerts, &txt).await;
@@ -338,12 +338,11 @@ pub fn spawn(app: AppHandle) {
                 match (want, upnp_port) {
                     (Some(port), cur) if cur != Some(port) || last_upnp.is_none_or(|t| t.elapsed() >= Duration::from_secs(1200)) => {
                         last_upnp = Some(Instant::now());
-                        match palmanager_core::net::lan_ip() {
-                            Some(ip) => match palmanager_core::upnp::open(port, ip).await {
+                        if let Some(ip) = palmanager_core::net::lan_ip() {
+                            match palmanager_core::upnp::open(port, ip).await {
                                 Ok(_) => { upnp_port = Some(port); upnp_warned = false; }
                                 Err(e) => if !upnp_warned { upnp_warned = true; let _ = alerts::dispatch_text(&s.alerts, &format!("⚠️ UPnP : {e}")).await; },
-                            },
-                            None => {}
+                            }
                         }
                     }
                     (None, Some(port)) => { let _ = palmanager_core::upnp::close(port).await; upnp_port = None; last_upnp = None; }
