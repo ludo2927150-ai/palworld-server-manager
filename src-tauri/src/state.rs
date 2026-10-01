@@ -24,7 +24,11 @@ impl AppState {
         let settings_path = config_dir.join("settings.json");
         let history = HistoryStore::open(config_dir.join("history"), chrono::Utc::now().timestamp())?;
         Ok(Self {
-            settings: RwLock::new(AppSettings::load(&settings_path)?),
+            settings: RwLock::new({
+                let mut s = AppSettings::load(&settings_path)?;
+                s.resolve_backup_destination(&config_dir, &std::env::current_dir()?);
+                s
+            }),
             settings_path,
             server: ServerController::new(),
             monitor: Mutex::new(Monitor::new()),

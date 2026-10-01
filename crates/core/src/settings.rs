@@ -134,6 +134,20 @@ impl AppSettings {
         if p.is_dir() { p.join("steamcmd.exe") } else { p }
     }
 
+    /// Rend `backup.destination` absolu. Un chemin relatif dépendait du dossier de travail : `src-tauri` en développement
+    /// (où le watcher de `tauri dev` relançait l'application à chaque archive écrite) et imprévisible une fois installé.
+    /// Si d'anciennes sauvegardes existent à l'ancien emplacement relatif (`cwd/destination`), on les déplace.
+    pub fn resolve_backup_destination(&mut self, base: &Path, cwd: &Path) {
+        let d = self.backup.destination.clone();
+        if d.is_absolute() { return; }
+        let (old, new) = (cwd.join(&d), base.join(&d));
+        if old.is_dir() && !new.exists() {
+            if let Some(p) = new.parent() { let _ = std::fs::create_dir_all(p); }
+            if std::fs::rename(&old, &new).is_err() { self.backup.destination = old; return; } // déplacement impossible : on garde l'ancien
+        }
+        self.backup.destination = new;
+    }
+
     pub fn exe_path(&self) -> PathBuf { self.server_dir.join("PalServer.exe") }
     /// `<server>/Pal/Saved/Config/WindowsServer/PalWorldSettings.ini`
     pub fn world_settings_path(&self) -> PathBuf {
@@ -178,6 +192,28 @@ impl AppSettings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn relative_backup_destination_becomes_absolute_and_old_backups_move() {
+        let root = std::env::temp_dir().join(format!("pal-dest-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let (cwd, base) = (root.join("cwd"), root.join("appdata"));
+        std::fs::create_dir_all(cwd.join("backups")).unwrap();
+        std::fs::write(cwd.join("backups/palworld-1.zip"), b"z").unwrap();
+        let mut s = AppSettings::default(); // destination relative « backups »
+        s.resolve_backup_destination(&base, &cwd);
+        assert_eq!(s.backup.destination, base.join("backups"));
+        assert!(base.join("backups/palworld-1.zip").exists() && !cwd.join("backups").exists());
+        // Déjà absolu : inchangé. Rien à déplacer : simple résolution.
+        let mut a = AppSettings::default();
+        a.backup.destination = root.join("autre");
+        a.resolve_backup_destination(&base, &cwd);
+        assert_eq!(a.backup.destination, root.join("autre"));
+        let mut b = AppSettings::default();
+        b.resolve_backup_destination(&root.join("vide"), &cwd);
+        assert_eq!(b.backup.destination, root.join("vide/backups"));
+        std::fs::remove_dir_all(root).ok();
+    }
 
     #[test]
     fn steamcmd_path_is_forgiving() {
