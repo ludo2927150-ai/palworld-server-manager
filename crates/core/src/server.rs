@@ -5,6 +5,7 @@
 use crate::{backup, rest::RestClient, settings::AppSettings, Error, Result};
 use std::time::Duration;
 use sysinfo::System;
+use std::path::{Path, PathBuf};
 use tokio::{process::{Child, Command}, sync::Mutex};
 
 /// PID de tous les processus du serveur (lanceur + jeu).
@@ -14,6 +15,31 @@ pub fn find_server_pids() -> Vec<u32> {
     sys.processes().iter()
         .filter(|(_, p)| p.name().to_ascii_lowercase().starts_with("palserver"))
         .map(|(pid, _)| pid.as_u32()).collect()
+}
+
+/// Dossier d'installation du serveur actuellement en cours d'exécution (déduit du chemin de son processus).
+pub fn running_server_dir() -> Option<PathBuf> {
+    let mut sys = System::new();
+    sys.refresh_processes();
+    sys.processes().values().filter(|p| p.name().to_ascii_lowercase().starts_with("palserver")).find_map(|p| install_dir_from_exe(p.exe()?))
+}
+
+/// `…\PalServer\PalServer.exe` → `…\PalServer` ; `…\PalServer\Pal\Binaries\Win64\PalServer-Win64-Shipping-Cmd.exe` → `…\PalServer`.
+pub fn install_dir_from_exe(exe: &Path) -> Option<PathBuf> {
+    let name = exe.file_name()?.to_string_lossy().to_ascii_lowercase();
+    if name == "palserver.exe" { return exe.parent().map(Path::to_path_buf); }
+    if name.starts_with("palserver-") {
+        let dir = exe.ancestors().nth(4)?; // exe → Win64 → Binaries → Pal → racine
+        let in_pal = exe.ancestors().nth(3).and_then(|p| p.file_name()).is_some_and(|n| n.eq_ignore_ascii_case("Pal"));
+        return in_pal.then(|| dir.to_path_buf());
+    }
+    None
+}
+
+/// Deux chemins désignent-ils le même dossier ? (insensible à la casse et aux séparateurs)
+pub fn same_dir(a: &Path, b: &Path) -> bool {
+    let norm = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf()).to_string_lossy().to_ascii_lowercase().replace('\\', "/").trim_end_matches('/').to_string();
+    norm(a) == norm(b)
 }
 
 fn kill_all() {
@@ -88,5 +114,19 @@ impl ServerController {
     pub async fn restart(&self, s: &AppSettings) -> Result<()> {
         self.stop(s, Duration::from_secs(60)).await?;
         self.start(s).await
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn install_dir_is_derived_from_process_paths() {
+        assert_eq!(install_dir_from_exe(Path::new("D:/Games/PalServer/PalServer.exe")).unwrap(), Path::new("D:/Games/PalServer"));
+        assert_eq!(install_dir_from_exe(Path::new("D:/Games/PalServer/Pal/Binaries/Win64/PalServer-Win64-Shipping-Cmd.exe")).unwrap(), Path::new("D:/Games/PalServer"));
+        assert!(install_dir_from_exe(Path::new("D:/x/Other/Win64/PalServer-Win64-Shipping-Cmd.exe")).is_none());
+        assert!(install_dir_from_exe(Path::new("D:/x/notepad.exe")).is_none());
+        assert!(same_dir(Path::new("D:/Games/PalServer/"), Path::new("D:/Games/PalServer")));
+        assert!(!same_dir(Path::new("D:/a"), Path::new("D:/b")));
     }
 }

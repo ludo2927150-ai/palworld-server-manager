@@ -25,6 +25,12 @@ pub fn diagnose_files(s: &AppSettings) -> Vec<Check> {
         chk("steamcmd", "SteamCMD trouvé (mises à jour)", steamcmd.exists() || steamcmd.components().count() == 1,
             steamcmd.display().to_string()),
     ];
+    // Le serveur qui tourne est-il bien celui que l'application gère ? Sinon sauvegardes, journal et configuration visent le mauvais dossier.
+    if let Some(running) = crate::server::running_server_dir() {
+        let same = crate::server::same_dir(&running, &s.server_dir);
+        v.push(chk("server_dir_match", "Le dossier configuré est celui du serveur en cours d'exécution", same,
+            if same { String::new() } else { format!("serveur en marche dans : {} — configuré : {}", running.display(), s.server_dir.display()) }));
+    }
     match s.load_world_options() {
         Err(e) => v.push(chk("ini", "PalWorldSettings.ini lisible", false, e.to_string())),
         Ok((o, from_default)) => {

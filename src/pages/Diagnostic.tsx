@@ -28,6 +28,13 @@ export default function Diagnostic({ notify }: { notify: (m: string) => void }) 
         )}
         <p className="mt-3 text-xs text-slate-500">Le dossier du serveur, SteamCMD et le port se règlent dans l'onglet « Application ».</p>
       </div>
+      {checks?.some((c) => c.id === "server_dir_match" && !c.ok) && (
+        <div className="card space-y-3">
+          <h3 className="font-semibold">Le serveur qui tourne n'est pas dans le dossier configuré</h3>
+          <p className="text-sm text-slate-400">Sauvegardes, journal et configuration visent le dossier configuré : s'il est faux, rien de tout cela ne fonctionne. Vous pouvez adopter le dossier du serveur en cours d'exécution.</p>
+          <button className="btn-primary" onClick={() => api.useRunningServerDir().then((d) => { notify(`Dossier du serveur : ${d}`); run(); }).catch((e) => notify(String(e)))}>Utiliser le dossier du serveur en marche</button>
+        </div>
+      )}
       {restBroken && (
         <div className="card space-y-3">
           <h3 className="font-semibold">Corriger l'API REST en un clic</h3>

@@ -41,7 +41,7 @@ fn main() {
             commands::test_alert,
             commands::announce, commands::kick_player, commands::ban_player, commands::unban_player,
             commands::update_server, commands::get_autostart, commands::set_autostart, commands::get_history, commands::get_sessions, commands::read_logs,
-            commands::app_version, commands::check_update, commands::install_update, commands::verify_backup, commands::profiles_list, commands::profile_save, commands::profile_apply, commands::profile_delete, commands::check_server_update, commands::diagnose, commands::detect_setup, commands::fix_rest, commands::network_info, commands::system_info, commands::apply_performance, commands::public_ip,
+            commands::app_version, commands::check_update, commands::install_update, commands::verify_backup, commands::profiles_list, commands::profile_save, commands::profile_apply, commands::profile_delete, commands::check_server_update, commands::use_running_server_dir, commands::diagnose, commands::detect_setup, commands::fix_rest, commands::network_info, commands::system_info, commands::apply_performance, commands::public_ip,
             commands::analyze_log, commands::players_known, commands::players_bans, commands::mods_state, commands::mods_set_global, commands::mods_set_root, commands::mods_set_active, commands::mods_add, commands::mods_remove, commands::remote_info, commands::regenerate_remote_token, commands::create_guest, commands::revoke_guest,
         ])
         .run(tauri::generate_context!())

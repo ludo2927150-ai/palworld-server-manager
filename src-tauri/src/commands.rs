@@ -530,3 +530,15 @@ pub async fn check_server_update(st: S<'_>) -> Result<ServerUpdateInfo> {
     let outdated = installed.as_deref().is_some_and(|i| i != latest);
     Ok(ServerUpdateInfo { installed, latest, outdated })
 }
+
+/// Adopte le dossier d'installation du serveur actuellement en marche comme dossier configuré.
+#[tauri::command]
+pub async fn use_running_server_dir(app: tauri::AppHandle, st: S<'_>) -> Result<String> {
+    let dir = palmanager_core::server::running_server_dir().ok_or_else(|| Error::Other("aucun serveur en cours d'exécution".into()))?;
+    let mut s = st.settings.read().await.clone();
+    s.server_dir = dir.clone();
+    s.save(&st.settings_path)?;
+    *st.settings.write().await = s;
+    crate::remote::apply(&app).await;
+    Ok(dir.display().to_string())
+}

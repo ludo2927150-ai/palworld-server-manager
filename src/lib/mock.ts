@@ -48,6 +48,7 @@ export async function mock<T>(cmd: string, args?: Record<string, unknown>): Prom
     case "profile_save": case "profile_delete": return r(undefined);
     case "profile_apply": return r(7);
     case "check_server_update": return r({ installed: "15012345", latest: "15012345", outdated: false });
+    case "use_running_server_dir": return r("C:/palworld/PalServer");
     case "diagnose": return r([{ id: "exe", label: "PalServer.exe trouvé", ok: true, detail: "" }, { id: "rest_enabled", label: "API REST activée (RESTAPIEnabled=True)", ok: false, detail: "" }]);
     case "get_autostart": return r(false);
     case "network_info": return r({ lan_ip: "192.168.1.42" });

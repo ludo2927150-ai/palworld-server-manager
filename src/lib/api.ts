@@ -50,6 +50,7 @@ export const api = {
   profileApply: (name: string) => call<number>("profile_apply", { name }),
   profileDelete: (name: string) => call<void>("profile_delete", { name }),
   checkServerUpdate: () => call<ServerUpdateInfo>("check_server_update"),
+  useRunningServerDir: () => call<string>("use_running_server_dir"),
   diagnose: () => call<Check[]>("diagnose"),
   fixRest: (adminPassword: string) => call<void>("fix_rest", { adminPassword }),
   getAutostart: () => call<boolean>("get_autostart"),

@@ -42,6 +42,12 @@ pub fn locate(server_dir: &Path, custom: Option<&Path>) -> Option<PathBuf> {
     if let Some(c) = custom.filter(|c| !c.as_os_str().is_empty()) {
         return c.is_file().then(|| c.to_path_buf());
     }
+    // Le dossier configuré peut être erroné alors que le serveur tourne ailleurs : on essaie aussi le dossier réel du processus.
+    let running = crate::server::running_server_dir();
+    [Some(server_dir.to_path_buf()), running].into_iter().flatten().find_map(|root| newest_log_under(&root))
+}
+
+fn newest_log_under(server_dir: &Path) -> Option<PathBuf> {
     walkdir::WalkDir::new(server_dir.join("Pal/Saved")).max_depth(4).into_iter().filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_file() && e.path().extension().is_some_and(|x| x.eq_ignore_ascii_case("log")))
         .filter_map(|e| Some((e.metadata().ok()?.modified().ok()?, e.into_path())))
