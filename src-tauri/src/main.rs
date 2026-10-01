@@ -8,7 +8,6 @@ mod tray;
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--minimized"])))
         .on_window_event(|window, event| {
             // « Fermer » réduit dans la zone de notification si l'option est activée.
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

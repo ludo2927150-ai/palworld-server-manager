@@ -40,13 +40,27 @@ pub struct BackupSettings {
     pub mirror_destination: Option<PathBuf>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RuleAction { Start, Stop, Restart }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScheduleRule {
+    /// Heure locale, format `HH:MM`.
+    pub time: String,
+    pub action: RuleAction,
+    /// Jours concernés : 0 = lundi … 6 = dimanche ; vide = tous les jours.
+    #[serde(default)]
+    pub days: Vec<u8>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ScheduleSettings {
     pub enabled: bool,
-    /// Heures de redémarrage quotidien, format `HH:MM` (heure locale).
-    pub times: Vec<String>,
-    /// Annonces en jeu, en minutes avant le redémarrage.
+    /// Horaires programmés : démarrer, arrêter ou redémarrer le serveur.
+    pub rules: Vec<ScheduleRule>,
+    /// Annonces en jeu, en minutes avant un arrêt ou un redémarrage.
     pub announce_minutes: Vec<u32>,
     /// Redémarre (avec préavis d'1 minute) si la RAM du serveur dépasse ce pourcentage.
     pub memory_restart_percent: Option<f32>,
@@ -92,7 +106,12 @@ impl Default for BackupSettings {
 }
 impl Default for ScheduleSettings {
     fn default() -> Self {
-        Self { enabled: false, times: vec!["04:00".into()], announce_minutes: vec![15, 5, 1], memory_restart_percent: None }
+        Self {
+            enabled: false,
+            rules: vec![ScheduleRule { time: "04:00".into(), action: RuleAction::Restart, days: vec![] }],
+            announce_minutes: vec![15, 5, 1],
+            memory_restart_percent: None,
+        }
     }
 }
 impl Default for AlertSettings {

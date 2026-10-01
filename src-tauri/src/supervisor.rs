@@ -2,7 +2,7 @@
 //! redémarrage auto après crash. Émet l'événement `snapshot` vers le frontend à chaque tick.
 
 use crate::{commands::backup_everywhere, state::AppState};
-use palmanager_core::{alerts, history::{PlayerEvent, Sample}, summary, rest::RestClient, schedule::Action, settings::AppSettings};
+use palmanager_core::{alerts, history::{PlayerEvent, Sample}, summary, rest::RestClient, schedule::Action, settings::{AppSettings, RuleAction}};
 use std::{collections::HashSet, sync::atomic::Ordering, time::{Duration, Instant}};
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -16,6 +16,22 @@ async fn maintenance_restart(st: &AppState, s: &AppSettings) {
     st.expected_stop.store(false, Ordering::SeqCst);
     let _ = st.server.start(s).await;
     st.maintenance.store(false, Ordering::SeqCst);
+}
+
+/// Arrêt planifié : sauvegarde puis arrêt propre. `expected_stop` reste vrai pour éviter une fausse alerte de
+/// crash et un redémarrage automatique ; il est remis à faux au prochain démarrage.
+async fn maintenance_stop(st: &AppState, s: &AppSettings) {
+    if st.maintenance.swap(true, Ordering::SeqCst) { return; }
+    if let Ok(api) = RestClient::new(&s.rest) { let _ = api.save().await; }
+    let _ = backup_everywhere(s);
+    st.expected_stop.store(true, Ordering::SeqCst);
+    let _ = st.server.stop(s, Duration::from_secs(60)).await;
+    st.maintenance.store(false, Ordering::SeqCst);
+}
+
+async fn scheduled_start(st: &AppState, s: &AppSettings) {
+    st.expected_stop.store(false, Ordering::SeqCst);
+    let _ = st.server.start(s).await;
 }
 
 pub fn spawn(app: AppHandle) {
@@ -40,22 +56,26 @@ pub fn spawn(app: AppHandle) {
                 if matches!(e, alerts::Event::Crash) && s.auto_restart { let _ = st.server.start(&s).await; }
             }
 
-            // Redémarrages planifiés (annonces en jeu puis restart) — uniquement si le serveur tourne.
-            if snap.running && !maintenance {
+            // Horaires programmés (démarrer / arrêter / redémarrer) et redémarrage préventif sur seuil de RAM.
+            if !maintenance {
                 let now = chrono::Local::now().naive_local();
                 let actions = st.scheduler.lock().await.tick(&s.schedule, now);
                 for a in actions {
                     match a {
-                        Action::Announce { minutes } => {
-                            if let Some(api) = &api {
-                                let _ = api.announce(&format!("Redémarrage du serveur dans {minutes} minute(s).")).await;
+                        Action::Announce { minutes, action } => {
+                            if let (true, Some(api)) = (snap.running, &api) {
+                                let what = if action == RuleAction::Stop { "Arrêt" } else { "Redémarrage" };
+                                let _ = api.announce(&format!("{what} du serveur dans {minutes} minute(s).")).await;
                             }
                         }
-                        Action::Restart => maintenance_restart(&st, &s).await,
+                        Action::Run(RuleAction::Start) => if !snap.running { scheduled_start(&st, &s).await },
+                        Action::Run(RuleAction::Stop) => if snap.running { maintenance_stop(&st, &s).await },
+                        Action::Run(RuleAction::Restart) => {
+                            if snap.running { maintenance_restart(&st, &s).await } else { scheduled_start(&st, &s).await }
+                        }
                     }
                 }
-                // Redémarrage préventif si la RAM dépasse le seuil (fuite mémoire) : préavis d'1 minute.
-                if let Some(th) = s.schedule.memory_restart_percent.filter(|_| s.schedule.enabled) {
+                if let Some(th) = s.schedule.memory_restart_percent.filter(|_| s.schedule.enabled && snap.running) {
                     if snap.memory_percent >= th {
                         if let Some(api) = &api { let _ = api.announce("Mémoire élevée : redémarrage dans 1 minute.").await; }
                         tokio::time::sleep(Duration::from_secs(60)).await;

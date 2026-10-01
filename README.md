@@ -8,7 +8,7 @@ Application desktop Windows (Tauri 2 + React + Tailwind) pour piloter un serveur
 | Éditeur graphique de `PalWorldSettings.ini` (aller-retour fidèle) | scaffold fonctionnel |
 | Monitoring CPU / RAM / joueurs / FPS | scaffold fonctionnel |
 | Backups ZIP automatiques + rotation + restauration | scaffold fonctionnel (testé) |
-| Redémarrages planifiés + annonces en jeu, redémarrage sur seuil RAM | scaffold fonctionnel (planificateur testé) |
+| Horaires programmés (démarrer / arrêter / redémarrer, par jour de semaine) + annonces en jeu, redémarrage sur seuil RAM | scaffold fonctionnel (planificateur testé) |
 | Mise à jour SteamCMD, adoption d'un serveur déjà lancé, ban/unban | scaffold fonctionnel |
 | Historique 7 j (graphiques CPU/RAM/joueurs/FPS), sessions de jeu, journal du serveur en direct | scaffold fonctionnel (testé) |
 | Éditeur de config complet (~90 clés, préréglages, diff, import/export), diagnostic + correction API REST | scaffold fonctionnel |

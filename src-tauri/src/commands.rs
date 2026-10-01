@@ -183,14 +183,10 @@ pub async fn fix_rest(st: S<'_>, admin_password: String) -> Result<()> {
 }
 
 #[tauri::command]
-pub async fn get_autostart(app: tauri::AppHandle) -> Result<bool> {
-    use tauri_plugin_autostart::ManagerExt;
-    app.autolaunch().is_enabled().map_err(|e| Error::Other(e.to_string()))
-}
+pub async fn get_autostart() -> Result<bool> { palmanager_core::autostart::is_enabled() }
 
 #[tauri::command]
-pub async fn set_autostart(app: tauri::AppHandle, enabled: bool) -> Result<()> {
-    use tauri_plugin_autostart::ManagerExt;
-    let m = app.autolaunch();
-    (if enabled { m.enable() } else { m.disable() }).map_err(|e| Error::Other(e.to_string()))
+pub async fn set_autostart(enabled: bool) -> Result<()> {
+    let exe = std::env::current_exe()?;
+    palmanager_core::autostart::set_enabled(&exe, enabled)
 }

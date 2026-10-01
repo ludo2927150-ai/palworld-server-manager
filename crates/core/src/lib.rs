@@ -2,6 +2,7 @@
 //! La couche `src-tauri` n'expose que de fines commandes IPC au-dessus de ces modules.
 
 pub mod alerts;
+pub mod autostart;
 pub mod backup;
 pub mod error;
 pub mod history;

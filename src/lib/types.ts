@@ -9,7 +9,7 @@ export interface Opt { key: string; value: string; quoted: boolean }
 export interface BackupInfo { file_name: string; path: string; size_bytes: number; created: string }
 export interface AppSettings {
   server_dir: string; steamcmd_path: string;
-  schedule: { enabled: boolean; times: string[]; announce_minutes: number[]; memory_restart_percent: number | null };
+  schedule: { enabled: boolean; rules: ScheduleRule[]; announce_minutes: number[]; memory_restart_percent: number | null };
   launch_args: string[]; auto_restart: boolean; close_to_tray: boolean;
   rest: { host: string; port: number; admin_password: string };
   backup: { enabled: boolean; interval_minutes: number; retention: number; destination: string; mirror_destination: string | null };
@@ -24,3 +24,5 @@ export interface Session { name: string; start: number; end: number | null }
 export interface LogChunk { lines: string[]; offset: number }
 export interface Check { id: string; label: string; ok: boolean; detail: string }
 export interface WorldSettings { options: Opt[]; from_default: boolean }
+export type RuleAction = "start" | "stop" | "restart";
+export interface ScheduleRule { time: string; action: RuleAction; days: number[] }
