@@ -145,6 +145,10 @@ Treize onglets : Tableau de bord, Rejoindre, Historique, Performance, Mods, Joue
 | **MODE DÉMO** (orange) | Vous êtes dans un navigateur, pas dans l'application : les données sont fictives. |
 | **Nouvelle version disponible** | Une mise à jour de l'application existe (§ 2.3). |
 
+### 4.2 bis Boutons en cours d'exécution
+
+Quand vous cliquez sur un bouton qui lance une tâche (démarrer, arrêter, redémarrer, sauvegarder, restaurer, vérifier, enregistrer, tester…), **un petit rond tournant** apparaît sur le bouton tant que la tâche n'est pas terminée. Il disparaît dès qu'elle est finie, qu'elle ait réussi ou échoué (le résultat s'affiche alors dans un message). Pendant ce temps, le bouton ignore les clics supplémentaires : impossible de lancer deux fois la même action par erreur. La page Mobile fonctionne de la même façon.
+
 ### 4.3 Zone de notification (barre des tâches)
 
 L'application met une icône près de l'horloge. Clic droit : **Ouvrir Palworld Manager** / **Quitter**. Avec « Fermer la fenêtre = réduire dans la zone de notification » (chapitre 17), la croix ne quitte pas l'application : elle la cache, ce qui permet de garder la surveillance active. **Pour arrêter vraiment l'application : clic droit sur l'icône → Quitter.**

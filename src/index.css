@@ -65,3 +65,12 @@
 .manual td { @apply border border-slate-800 px-2 py-1 align-top; }
 .manual hr { @apply my-6 border-slate-800; }
 .manual-ext { @apply text-slate-400; }
+
+/* Bouton en cours d'exécution : petit rond tournant, clics ignorés tant que la tâche n'est pas terminée. */
+button[data-loading] { pointer-events: none; cursor: progress; opacity: 0.8; }
+button[data-loading]::before {
+  content: ""; display: inline-block; width: 0.85em; height: 0.85em; margin-right: 0.5em; vertical-align: -0.12em;
+  border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: pal-spin 0.7s linear infinite;
+}
+@keyframes pal-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { button[data-loading]::before { animation-duration: 2s; } }

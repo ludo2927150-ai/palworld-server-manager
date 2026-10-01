@@ -4,10 +4,53 @@ import { mock } from "./mock";
 
 export const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
-async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+async function callRaw<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (!inTauri) return mock<T>(cmd, args);
   const { invoke } = await import("@tauri-apps/api/core");
   return invoke<T>(cmd, args);
+}
+
+// ───────── Indicateur de chargement sur les boutons ─────────
+// Un bouton cliqué qui déclenche une commande affiche un petit rond tournant (attribut `data-loading`, voir index.css) jusqu'à la
+// fin de la tâche, succès ou échec. Pendant ce temps il est insensible aux clics (pas de double démarrage). Les commandes de
+// simple lecture périodique (état, journal…) n'y sont jamais associées.
+const PASSIVE = new Set(["get_snapshot", "read_logs", "get_history", "get_sessions", "audit_recent", "lock_status", "check_update", "app_version", "remote_info", "system_info"]);
+type Spin = HTMLButtonElement & { __n?: number; __t?: ReturnType<typeof setTimeout> };
+let lastBtn: Spin | null = null, lastClick = 0;
+let chainBtn: Spin | null = null, chainEnd = 0;
+
+if (typeof document !== "undefined") {
+  document.addEventListener("click", (e) => {
+    const b = (e.target as Element | null)?.closest?.("button") as Spin | null | undefined;
+    if (!b) return;
+    if (b.hasAttribute("data-loading")) { e.preventDefault(); e.stopImmediatePropagation(); return; } // déjà en cours
+    if (/(^|\s)btn(-primary|-danger)?(\s|$)/.test(b.className)) { lastBtn = b; lastClick = Date.now(); }
+  }, true);
+}
+
+function trackOnButton(p: Promise<unknown>) {
+  const now = Date.now();
+  // Le bouton qu'on vient de cliquer, ou celui dont la tâche vient de finir (actions enchaînées : enregistrer puis recharger…).
+  const b = lastBtn?.isConnected && now - lastClick < 400 ? lastBtn : chainBtn?.isConnected && now - chainEnd < 350 ? chainBtn : null;
+  if (!b) return;
+  b.__n = (b.__n ?? 0) + 1;
+  if (b.__t) clearTimeout(b.__t);
+  b.setAttribute("data-loading", "1");
+  b.setAttribute("aria-busy", "true");
+  const done = () => {
+    b.__n = Math.max(0, (b.__n ?? 1) - 1);
+    if (b.__n > 0) return;
+    chainBtn = b; chainEnd = Date.now();
+    // Léger délai : le rond ne clignote pas pour une tâche instantanée, et la tâche suivante d'une chaîne le reprend.
+    b.__t = setTimeout(() => { if ((b.__n ?? 0) === 0) { b.removeAttribute("data-loading"); b.removeAttribute("aria-busy"); } }, 350);
+  };
+  p.then(done, done);
+}
+
+function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  const p = callRaw<T>(cmd, args);
+  if (!PASSIVE.has(cmd)) trackOnButton(p);
+  return p;
 }
 
 export async function onSnapshot(cb: (s: Snapshot) => void): Promise<() => void> {

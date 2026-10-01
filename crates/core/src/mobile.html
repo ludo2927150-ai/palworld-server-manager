@@ -24,6 +24,9 @@
   button.primary { background:var(--pal); color:#00110f; font-weight:600; }
   button.danger { background:var(--bad); font-weight:600; }
   button:disabled { opacity:.4; }
+  button[data-loading] { pointer-events:none; opacity:.8; }
+  button[data-loading]::before { content:""; display:inline-block; width:.85em; height:.85em; margin-right:.5em; vertical-align:-.12em; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:spin .7s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
   .row { display:flex; gap:8px; flex-wrap:wrap; }
   .row > button { flex:1; }
   input { font:inherit; color:var(--text); background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:12px; width:100%; }
@@ -177,7 +180,20 @@
     } catch {}
   }
 
-  async function act(fn, okMsg) { try { await fn(); toast(okMsg); setTimeout(refresh, 1500); } catch (e) { toast(e.message); } }
+  // Dernier bouton touché : il affiche un rond tournant pendant l'action (et ignore les clics répétés).
+  let lastBtn = null;
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest && e.target.closest("button");
+    if (!b) return;
+    if (b.hasAttribute("data-loading")) { e.preventDefault(); e.stopImmediatePropagation(); return; }
+    lastBtn = b;
+  }, true);
+  async function act(fn, okMsg) {
+    const b = lastBtn;
+    if (b) b.setAttribute("data-loading", "1");
+    try { await fn(); toast(okMsg); setTimeout(refresh, 1500); } catch (e) { toast(e.message); }
+    finally { if (b) b.removeAttribute("data-loading"); }
+  }
 
   async function start() {
     show(true); offset = null; $("logs").textContent = "";
