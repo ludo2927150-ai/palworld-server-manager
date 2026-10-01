@@ -32,7 +32,7 @@ export interface AppSettings {
 export interface Sample { t: number; cpu: number; mem_percent: number; players: number; fps: number }
 export interface Session { name: string; start: number; end: number | null }
 export interface LogChunk { lines: string[]; offset: number; source: string; hint: string | null }
-export interface Check { id: string; label: string; ok: boolean; detail: string }
+export interface Check { id: string; label: string; ok: boolean; detail: string; hint: string }
 export interface WorldSettings { options: Opt[]; from_default: boolean }
 export type RuleAction = "start" | "stop" | "restart";
 export interface ScheduleRule { time: string; action: RuleAction; days: number[]; profile: string | null }

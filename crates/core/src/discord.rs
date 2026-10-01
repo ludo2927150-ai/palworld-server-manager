@@ -104,6 +104,7 @@ async fn respond<B: Backend>(http: &reqwest::Client, backend: &B, app_id: &str, 
         let _ = http.post(&cb).json(&json!({"type": 4, "data": reply(msg.into())})).send().await;
         return;
     }
+    backend.audit(&format!("discord:{}", it.user_id), &format!("/{}", it.name), it.arg.as_deref().unwrap_or(""));
     // Une action de contrôle peut durer plus que les 3 s accordées : accusé de réception, puis réponse différée.
     let _ = http.post(&cb).json(&json!({"type": 5, "data": {"flags": ephemeral}})).send().await;
     let text = run_command(backend, cmd, it.arg.as_deref()).await;

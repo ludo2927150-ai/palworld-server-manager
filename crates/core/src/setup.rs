@@ -9,10 +9,30 @@ pub struct Check {
     pub label: &'static str,
     pub ok: bool,
     pub detail: String,
+    /// Que faire si ce point est en échec (vide s'il est bon).
+    pub hint: String,
+}
+
+/// Conseil en français pour un point en échec.
+fn hint_for(id: &str) -> &'static str {
+    match id {
+        "exe" => "Indiquez le dossier qui contient PalServer.exe (onglet Application), ou installez le serveur avec l'assistant (« Tout installer »).",
+        "steamcmd" => "SteamCMD sert aux mises à jour et aux mods : indiquez son chemin dans Application, ou téléchargez-le avec l'assistant.",
+        "server_dir_match" => "Cliquez sur « Utiliser le dossier du serveur en marche » ci-dessous.",
+        "ini" => "PalWorldSettings.ini est introuvable ou illisible : démarrez le serveur une fois, ou vérifiez le dossier du serveur.",
+        "rest_enabled" | "admin_password" | "password_match" | "port_match" => "Utilisez « Corriger l'API REST en un clic » ci-dessous, puis redémarrez le serveur.",
+        "rest_reachable" => "Le serveur doit être démarré. S'il l'est : vérifiez le mot de passe admin, le port REST et le pare-feu Windows.",
+        "world_found" => "Aucun monde trouvé : le serveur n'a jamais été lancé, ou le dossier du serveur est faux. Lancez-le une fois.",
+        "disk" => "Libérez de l'espace disque : les sauvegardes et mises à jour ont besoin de place.",
+        "backup_writable" => "Le dossier de sauvegarde n'est pas accessible en écriture : choisissez un autre dossier (Sauvegardes ou Application).",
+        "mirror" => "Le second emplacement de sauvegarde est introuvable (disque débranché ? lecteur réseau déconnecté ?).",
+        "mods_consistent" => "Des mods activés n'existent plus dans le dossier Workshop : le serveur risque de ne pas démarrer. Réactivez-les ou retirez-les dans l'onglet Mods.",
+        _ => "",
+    }
 }
 
 fn chk(id: &'static str, label: &'static str, ok: bool, detail: impl Into<String>) -> Check {
-    Check { id, label, ok, detail: detail.into() }
+    Check { id, label, ok, detail: detail.into(), hint: if ok { String::new() } else { hint_for(id).to_string() } }
 }
 
 /// Vérifications de fichiers (synchrones).
@@ -30,6 +50,30 @@ pub fn diagnose_files(s: &AppSettings) -> Vec<Check> {
         let same = crate::server::same_dir(&running, &s.server_dir);
         v.push(chk("server_dir_match", "Le dossier configuré est celui du serveur en cours d'exécution", same,
             if same { String::new() } else { format!("serveur en marche dans : {} — configuré : {}", running.display(), s.server_dir.display()) }));
+    }
+    // Monde, disque, sauvegardes, mods : les causes fréquentes de « ça ne marche pas ».
+    let world = s.save_dir().exists();
+    v.push(chk("world_found", "Dossier de sauvegarde du monde trouvé", world, s.save_dir().display().to_string()));
+    let free = crate::health::free_space(&s.backup.destination);
+    let min = s.alerts.min_free_disk_gb.unwrap_or(5) as u64 * 1_000_000_000;
+    if let Some(f) = free { v.push(chk("disk", "Espace disque suffisant pour les sauvegardes", f >= min, format!("{:.1} Go libres", f as f64 / 1e9))); }
+    let writable = std::fs::create_dir_all(&s.backup.destination).is_ok() && {
+        let probe = s.backup.destination.join(".ecriture-test");
+        let ok = std::fs::write(&probe, b"x").is_ok();
+        let _ = std::fs::remove_file(&probe);
+        ok
+    };
+    v.push(chk("backup_writable", "Dossier de sauvegarde accessible en écriture", writable, s.backup.destination.display().to_string()));
+    if let Some(m) = &s.backup.mirror_destination {
+        let reachable = m.exists() || m.parent().is_some_and(|p| p.exists());
+        v.push(chk("mirror", "Second emplacement de sauvegarde accessible", reachable, m.display().to_string()));
+    }
+    let ms = crate::mods::load_settings(&s.server_dir);
+    if ms.global_enable && !ms.active.is_empty() {
+        let root = ms.workshop_root.clone().map(std::path::PathBuf::from).or_else(|| crate::mods::candidate_roots(&s.server_dir).into_iter().next());
+        let avail = root.map(|r| crate::mods::scan(&r, &s.server_dir, &[])).unwrap_or_default();
+        let missing = crate::mods::missing_active(&ms, &avail);
+        v.push(chk("mods_consistent", "Tous les mods activés sont présents", missing.is_empty(), if missing.is_empty() { String::new() } else { format!("manquants : {}", missing.join(", ")) }));
     }
     match s.load_world_options() {
         Err(e) => v.push(chk("ini", "PalWorldSettings.ini lisible", false, e.to_string())),

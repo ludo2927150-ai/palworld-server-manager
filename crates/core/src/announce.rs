@@ -18,7 +18,11 @@ pub fn render(template: &str, name: Option<&str>, online: usize, max: Option<u32
 
 /// Message d'accueil d'un joueur, par ordre de priorité : anniversaire ; message personnel ; retour après une longue absence ;
 /// sinon le message de bienvenue général. `last_seen` : dernière visite connue (avant celle-ci) ; `today_md` : date du jour `MM-JJ`.
-pub fn welcome_for(cfg: &AnnouncementSettings, user_id: &str, name: &str, last_seen: Option<i64>, now: i64, today_md: &str, online: usize, max: Option<u32>) -> Option<String> {
+/// Le joueur qui se connecte.
+pub struct Arriving<'a> { pub user_id: &'a str, pub name: &'a str, pub last_seen: Option<i64> }
+
+pub fn welcome_for(cfg: &AnnouncementSettings, who: &Arriving, now: i64, today_md: &str, online: usize, max: Option<u32>) -> Option<String> {
+    let (user_id, name, last_seen) = (who.user_id, who.name, who.last_seen);
     let personal = cfg.personal.iter().find(|p| p.user_id == user_id);
     let tpl = if let Some(p) = personal.filter(|p| p.birthday.as_deref().is_some_and(|b| b.trim() == today_md)) {
         Some(p.text.clone().filter(|t| !t.trim().is_empty()).unwrap_or_else(|| "Joyeux anniversaire {nom} !".into()))
@@ -116,13 +120,13 @@ mod tests {
             welcome_back_days: 30, welcome_back_text: Some("Ça fait {jours} jours, {nom} !".into()), ..Default::default()
         };
         let day = 86_400;
-        let w = |id: &str, name: &str, seen: Option<i64>, md: &str| welcome_for(&cfg, id, name, seen, 100 * day, md, 2, Some(32));
+        let w = |id: &str, name: &str, seen: Option<i64>, md: &str| welcome_for(&cfg, &Arriving { user_id: id, name, last_seen: seen }, 100 * day, md, 2, Some(32));
         assert_eq!(w("steam_1", "Alice", None, "10-01").unwrap(), "Salut la chef Alice"); // anniversaire avec texte perso
         assert_eq!(w("steam_2", "Bob", None, "03-15").unwrap(), "Joyeux anniversaire Bob !"); // anniversaire sans texte
         assert_eq!(w("steam_1", "Alice", None, "05-05").unwrap(), "Salut la chef Alice"); // texte perso
         assert_eq!(w("steam_3", "Zed", Some(100 * day - 45 * day), "05-05").unwrap(), "Ça fait 45 jours, Zed !");
         assert_eq!(w("steam_3", "Zed", Some(100 * day - 5 * day), "05-05").unwrap(), "Bienvenue Zed"); // absence courte : général
         assert_eq!(w("steam_2", "Bob", None, "05-05").unwrap(), "Bienvenue Bob");
-        assert!(welcome_for(&AnnouncementSettings::default(), "x", "X", None, 0, "01-01", 1, None).is_none());
+        assert!(welcome_for(&AnnouncementSettings::default(), &Arriving { user_id: "x", name: "X", last_seen: None }, 0, "01-01", 1, None).is_none());
     }
 }

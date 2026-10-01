@@ -37,6 +37,8 @@ pub trait Backend: Clone + Send + Sync + 'static {
     fn backup_now(&self) -> impl Future<Output = Result<BackupInfo>> + Send;
     fn announce(&self, message: String) -> impl Future<Output = Result<()>> + Send;
     fn kick(&self, user_id: String) -> impl Future<Output = Result<()>> + Send;
+    /// Journal d'audit : qui (`mobile:<nom>`, `discord:<id>`…) a fait quoi. Par défaut, rien n'est enregistré.
+    fn audit(&self, _who: &str, _action: &str, _detail: &str) {}
 }
 
 type ApiErr = (StatusCode, String);
@@ -154,6 +156,7 @@ async fn control<B: Backend>(State(b): State<B>, Extension(c): Extension<Credent
         _ => return Err((StatusCode::BAD_REQUEST, "action inconnue".into())),
     };
     need(&c, perm)?;
+    b.audit(&format!("mobile:{}", c.name), &format!("serveur : {action:?}"), "");
     b.control(action).await.map_err(err)?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -178,6 +181,7 @@ async fn logs<B: Backend>(State(b): State<B>, Extension(c): Extension<Credential
 
 async fn backup_now<B: Backend>(State(b): State<B>, Extension(c): Extension<Credential>) -> std::result::Result<Json<BackupInfo>, ApiErr> {
     need(&c, Perm::Backup)?;
+    b.audit(&format!("mobile:{}", c.name), "sauvegarde manuelle", "");
     b.backup_now().await.map(Json).map_err(err)
 }
 
@@ -185,6 +189,7 @@ async fn backup_now<B: Backend>(State(b): State<B>, Extension(c): Extension<Cred
 async fn announce<B: Backend>(State(b): State<B>, Extension(c): Extension<Credential>, Json(m): Json<Msg>) -> std::result::Result<StatusCode, ApiErr> {
     need(&c, Perm::Announce)?;
     if m.message.trim().is_empty() || m.message.len() > 500 { return Err((StatusCode::BAD_REQUEST, "message invalide".into())); }
+    b.audit(&format!("mobile:{}", c.name), "annonce", &m.message);
     b.announce(m.message).await.map_err(err)?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -192,6 +197,7 @@ async fn announce<B: Backend>(State(b): State<B>, Extension(c): Extension<Creden
 #[derive(Deserialize)] struct Kick { user_id: String }
 async fn kick<B: Backend>(State(b): State<B>, Extension(c): Extension<Credential>, Json(k): Json<Kick>) -> std::result::Result<StatusCode, ApiErr> {
     need(&c, Perm::Kick)?;
+    b.audit(&format!("mobile:{}", c.name), "expulsion", &k.user_id);
     b.kick(k.user_id).await.map_err(err)?;
     Ok(StatusCode::NO_CONTENT)
 }
