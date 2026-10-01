@@ -5,8 +5,8 @@
 use crate::{backup, rest::RestClient, settings::AppSettings, Error, Result};
 use std::time::Duration;
 use sysinfo::System;
-use std::path::{Path, PathBuf};
-use tokio::{process::{Child, Command}, sync::Mutex};
+use std::{path::{Path, PathBuf}, process::Stdio};
+use tokio::{io::{AsyncBufReadExt, AsyncWriteExt, BufReader}, process::{Child, Command}, sync::Mutex};
 
 /// PID de tous les processus du serveur (lanceur + jeu).
 pub fn find_server_pids() -> Vec<u32> {
@@ -53,10 +53,47 @@ pub struct ServerController {
     child: Mutex<Option<Child>>,
     /// Dernière sauvegarde d'arrêt qui a échoué (récupérée une fois par le superviseur pour alerter).
     backup_warning: std::sync::Mutex<Option<String>>,
+    /// Fichier où la sortie console du serveur (lancé par l'application) est enregistrée.
+    console_log: Option<PathBuf>,
+}
+
+const CONSOLE_LOG_MAX: u64 = 5 * 1024 * 1024;
+
+/// Recopie stdout + stderr du processus dans `log` (l'ancien fichier devient `.old` ; rotation à 5 Mo).
+fn capture_output(child: &mut Child, log: PathBuf) {
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    if let Some(o) = child.stdout.take() {
+        let tx = tx.clone();
+        tokio::spawn(async move { let mut l = BufReader::new(o).lines(); while let Ok(Some(line)) = l.next_line().await { if tx.send(line).is_err() { break; } } });
+    }
+    if let Some(e) = child.stderr.take() {
+        let tx = tx.clone();
+        tokio::spawn(async move { let mut l = BufReader::new(e).lines(); while let Ok(Some(line)) = l.next_line().await { if tx.send(line).is_err() { break; } } });
+    }
+    drop(tx);
+    tokio::spawn(async move {
+        if let Some(dir) = log.parent() { let _ = tokio::fs::create_dir_all(dir).await; }
+        let _ = tokio::fs::rename(&log, log.with_extension("old")).await;
+        let Ok(mut f) = tokio::fs::File::create(&log).await else { return };
+        let mut size = 0u64;
+        while let Some(line) = rx.recv().await {
+            if size > CONSOLE_LOG_MAX {
+                let _ = tokio::fs::rename(&log, log.with_extension("old")).await;
+                match tokio::fs::File::create(&log).await { Ok(n) => { f = n; size = 0; } Err(_) => return }
+            }
+            let buf = format!("{line}\n");
+            if f.write_all(buf.as_bytes()).await.is_err() { return; }
+            let _ = f.flush().await;
+            size += buf.len() as u64;
+        }
+    });
 }
 
 impl ServerController {
     pub fn new() -> Self { Self::default() }
+
+    pub fn with_console_log(mut self, path: PathBuf) -> Self { self.console_log = Some(path); self }
+    pub fn console_log_path(&self) -> Option<&Path> { self.console_log.as_deref() }
 
     pub async fn is_running(&self) -> bool {
         let mut g = self.child.lock().await;
@@ -77,7 +114,16 @@ impl ServerController {
         if self.is_running().await { return Err(Error::Other("le serveur tourne déjà".into())); }
         let exe = s.exe_path();
         if !exe.exists() { return Err(Error::Other(format!("introuvable : {}", exe.display()))); }
-        let child = Command::new(exe).args(&s.launch_args).current_dir(&s.server_dir).spawn()?;
+        let mut cmd = Command::new(exe);
+        cmd.args(&s.launch_args).current_dir(&s.server_dir);
+        if self.console_log.is_some() {
+            // La console du serveur est enregistrée et affichée dans l'application ; sans fenêtre noire pour le lanceur.
+            cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+            #[cfg(windows)]
+            cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+        }
+        let mut child = cmd.spawn()?;
+        if let Some(log) = &self.console_log { capture_output(&mut child, log.clone()); }
         *self.child.lock().await = Some(child);
         Ok(())
     }
@@ -119,6 +165,24 @@ impl ServerController {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn console_output_is_captured_and_old_log_kept() {
+        let dir = std::env::temp_dir().join(format!("pal-con-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("console.log");
+        std::fs::write(&log, "ancien\n").unwrap();
+        let mut c = Command::new("sh").args(["-c", "echo '[LOG] Kilz joined'; echo oups >&2"]).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+        capture_output(&mut c, log.clone());
+        c.wait().await.unwrap();
+        for _ in 0..50 { if std::fs::read_to_string(&log).map(|s| s.lines().count() >= 2).unwrap_or(false) { break; } tokio::time::sleep(Duration::from_millis(50)).await; }
+        let text = std::fs::read_to_string(&log).unwrap();
+        assert!(text.contains("[LOG] Kilz joined") && text.contains("oups"), "{text}");
+        assert_eq!(std::fs::read_to_string(log.with_extension("old")).unwrap(), "ancien\n");
+        std::fs::remove_dir_all(dir).ok();
+    }
 
     #[test]
     fn install_dir_is_derived_from_process_paths() {

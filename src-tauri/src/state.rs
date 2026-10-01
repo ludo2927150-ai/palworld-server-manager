@@ -45,7 +45,7 @@ impl AppState {
                 s
             }),
             settings_path,
-            server: ServerController::new(),
+            server: ServerController::new().with_console_log(config_dir.join("server-console.log")),
             monitor: Mutex::new(Monitor::new()),
             alerts: Mutex::new(AlertEngine::new()),
             history,
