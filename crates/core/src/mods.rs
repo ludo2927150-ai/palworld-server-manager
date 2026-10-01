@@ -2,6 +2,7 @@
 //! - `Mods\PalModSettings.ini` : `bGlobalEnableMod`, `WorkshopRootDir`, une ligne `ActiveModList=<PackageName>` par mod activé ;
 //! - chaque mod du Workshop est un dossier `<WorkshopRootDir>\<id>\` contenant un `Info.json` (PackageName, Version, InstallRule…) ;
 //! - un mod ne tourne sur un serveur dédié que s'il déclare une règle d'installation avec `"IsServer": true`.
+//!
 //! Les mods sont lus au démarrage du serveur : tout changement demande un redémarrage.
 
 use crate::{Error, Result};

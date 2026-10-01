@@ -2,12 +2,19 @@ name: CI
 on: [push, pull_request]
 jobs:
   core:
-    runs-on: ubuntu-latest
+    # Les tests tournent aussi sous Windows : chemins, reg.exe, PowerShell et séparateurs s'y comportent autrement.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with: { components: clippy }
       - uses: Swatinem/rust-cache@v2
       - run: cargo test -p palmanager-core
+      - run: cargo clippy -p palmanager-core --all-targets
   frontend:
     runs-on: ubuntu-latest
     steps:

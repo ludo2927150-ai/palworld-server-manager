@@ -1,5 +1,5 @@
 // Pont IPC. Hors Tauri (npm run dev dans un navigateur) on bascule sur des données factices.
-import type { AppSettings, BackupInfo, Check, Guest, ModsState, LogChunk, Opt, Perm, RemoteInfo, Sample, Session, Snapshot, SystemInfo, WorldSettings } from "./types";
+import type { AppSettings, BackupInfo, Check, Finding, Guest, ModsState, LogChunk, Opt, Perm, RemoteInfo, Sample, Session, Snapshot, SystemInfo, WorldSettings } from "./types";
 import { mock } from "./mock";
 
 export const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -56,6 +56,7 @@ export const api = {
   modsSetActive: (packageName: string, active: boolean) => call<void>("mods_set_active", { packageName, active }),
   modsAdd: (input: string) => call<string>("mods_add", { input }),
   modsRemove: (workshopId: string) => call<void>("mods_remove", { workshopId }),
+  analyzeLog: () => call<Finding[]>("analyze_log"),
   announce: (message: string) => call<void>("announce", { message }),
   kick: (userId: string) => call<void>("kick_player", { userId }),
 };

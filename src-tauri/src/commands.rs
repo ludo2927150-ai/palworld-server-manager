@@ -414,3 +414,11 @@ pub async fn mods_remove(st: S<'_>, workshop_id: String) -> Result<()> {
     if let Some(p) = pkg { mods::set_active(&mut ms, &p, false); mods::save_settings(&s.server_dir, &ms)?; }
     Ok(())
 }
+
+/// Analyse la fin du journal du serveur (≈ 64 Ko) et renvoie les causes probables de problèmes.
+#[tauri::command]
+pub async fn analyze_log(st: S<'_>) -> Result<Vec<palmanager_core::loganalysis::Finding>> {
+    let path = st.settings.read().await.server_dir.join("Pal/Saved/Logs/Pal.log");
+    let chunk = logs::read_from(&path, None)?;
+    Ok(palmanager_core::loganalysis::analyze(&chunk.lines))
+}

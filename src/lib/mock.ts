@@ -52,6 +52,10 @@ export async function mock<T>(cmd: string, args?: Record<string, unknown>): Prom
       mods: demoMods });
     case "mods_set_active": { const a = args as { packageName: string; active: boolean }; demoMods.forEach((x) => { if (x.package_name === a.packageName) x.active = a.active; }); return r(undefined); }
     case "mods_add": return r("Mod 3123456791 téléchargé.");
+    case "analyze_log": return r([
+      { id: "oom", severity: "critical", title: "Mémoire insuffisante", advice: "Le serveur a manqué de RAM. Dans l'onglet Performance, fixez une limite de RAM avec redémarrage automatique.", count: 2, sample: "Failed to allocate 4294967296 bytes" },
+      { id: "mod", severity: "warning", title: "Erreur liée à un mod", advice: "Un mod pose problème. Dans l'onglet Mods, désactivez-le puis redémarrez.", count: 1, sample: "[WARN] mod error in X" },
+    ]);
     case "read_world_settings": return r({ options: world, from_default: false });
     case "write_world_settings": world = (args as { options: Opt[] }).options; return r(undefined);
     case "list_backups": return r([{ file_name: "palworld-20260930-120000.zip", path: "backups/x.zip", size_bytes: 52_000_000, created: new Date().toISOString() }]);

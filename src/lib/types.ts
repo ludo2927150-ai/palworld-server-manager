@@ -43,3 +43,4 @@ export interface ModsState {
   settings_path: string; global_enable: boolean; workshop_root: string | null; root_exists: boolean;
   candidates: string[]; download_root: string; mods: ModInfo[];
 }
+export interface Finding { id: string; severity: "critical" | "warning" | "info"; title: string; advice: string; count: number; sample: string }

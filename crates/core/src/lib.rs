@@ -7,6 +7,7 @@ pub mod backup;
 pub mod error;
 pub mod history;
 pub mod ini;
+pub mod loganalysis;
 pub mod logs;
 pub mod mods;
 pub mod monitor;

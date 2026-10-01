@@ -34,7 +34,7 @@ pub fn diagnose_files(s: &AppSettings) -> Vec<Check> {
             let pw = ini::get(&o, "AdminPassword").unwrap_or("");
             v.push(chk("admin_password", "Mot de passe admin défini", !pw.is_empty(), ""));
             v.push(chk("password_match", "Mot de passe de l'application = celui du serveur", !pw.is_empty() && pw == s.rest.admin_password, ""));
-            let port_ok = ini::get(&o, "RESTAPIPort").map_or(true, |p| p.parse::<u16>().ok() == Some(s.rest.port));
+            let port_ok = ini::get(&o, "RESTAPIPort").is_none_or(|p| p.parse::<u16>().ok() == Some(s.rest.port));
             v.push(chk("port_match", "Port REST de l'application = celui du serveur", port_ok, format!("app : {}", s.rest.port)));
         }
     }

@@ -58,7 +58,7 @@ impl AlertEngine {
         let cd = Duration::from_secs(cfg.cooldown_secs);
         ev.retain(|e| {
             if matches!(e, Event::PlayerJoined(_) | Event::PlayerLeft(_)) { return true; }
-            let ok = self.last_sent.get(e.key()).map_or(true, |t| t.elapsed() >= cd);
+            let ok = self.last_sent.get(e.key()).is_none_or(|t| t.elapsed() >= cd);
             if ok { self.last_sent.insert(e.key(), Instant::now()); }
             ok
         });

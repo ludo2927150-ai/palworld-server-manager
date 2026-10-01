@@ -81,7 +81,7 @@ impl Credentials {
         for c in g.iter() {
             if ct_eq(presented.as_bytes(), c.token.as_bytes()) { found = Some(c); }
         }
-        found.filter(|c| c.expires_at.map_or(true, |e| now < e)).cloned()
+        found.filter(|c| c.expires_at.is_none_or(|e| now < e)).cloned()
     }
 }
 
