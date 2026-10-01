@@ -11,9 +11,52 @@ type S<'a> = State<'a, AppState>;
 pub async fn get_settings(st: S<'_>) -> Result<AppSettings> { Ok(st.settings.read().await.clone()) }
 
 #[tauri::command]
-pub async fn save_settings(st: S<'_>, settings: AppSettings) -> Result<()> {
+pub async fn save_settings(app: tauri::AppHandle, st: S<'_>, mut settings: AppSettings) -> Result<()> {
+    if settings.remote.enabled { settings.remote.ensure_token()?; }
     settings.save(&st.settings_path)?;
     *st.settings.write().await = settings;
+    crate::remote::apply(&app).await;
+    Ok(())
+}
+
+#[derive(serde::Serialize)]
+pub struct RemoteUrl {
+    pub label: String,
+    pub url: String,
+}
+
+#[derive(serde::Serialize)]
+pub struct RemoteInfo {
+    pub running: bool,
+    pub error: Option<String>,
+    /// Adresses à ouvrir depuis le téléphone (le jeton est dans le fragment `#token=`, jamais envoyé au réseau).
+    pub urls: Vec<RemoteUrl>,
+    /// Adresse Tailscale détectée sur ce PC (accès hors de la maison) ; `false` = Tailscale absent ou déconnecté.
+    pub tailscale_found: bool,
+}
+
+#[tauri::command]
+pub async fn remote_info(st: S<'_>) -> Result<RemoteInfo> {
+    let cfg = st.settings.read().await.remote.clone();
+    let tailscale = tokio::task::spawn_blocking(palmanager_core::net::tailscale_ip).await.ok().flatten();
+    let lan = palmanager_core::net::lan_ip();
+    let mut urls = Vec::new();
+    if cfg.enabled {
+        let mk = |ip: std::net::IpAddr| format!("http://{ip}:{}/#token={}", cfg.port, cfg.token);
+        if let Some(ip) = tailscale { urls.push(RemoteUrl { label: "Partout (Tailscale, 4G ou Wi-Fi)".into(), url: mk(ip) }); }
+        if let Some(ip) = lan { urls.push(RemoteUrl { label: "Chez vous (même Wi-Fi)".into(), url: mk(ip) }); }
+    }
+    Ok(RemoteInfo { running: st.remote.lock().await.is_some(), error: st.remote_error.lock().await.clone(), urls, tailscale_found: tailscale.is_some() })
+}
+
+/// Invalide l'ancien jeton (les téléphones déjà connectés devront se reconnecter).
+#[tauri::command]
+pub async fn regenerate_remote_token(app: tauri::AppHandle, st: S<'_>) -> Result<()> {
+    let mut s = st.settings.read().await.clone();
+    s.remote.token = palmanager_core::settings::RemoteSettings::generate_token()?;
+    s.save(&st.settings_path)?;
+    *st.settings.write().await = s;
+    crate::remote::apply(&app).await;
     Ok(())
 }
 

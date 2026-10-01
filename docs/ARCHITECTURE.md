@@ -49,3 +49,12 @@
 - `admin_password` et webhooks sont stockés en clair dans `settings.json` (v0.1) ; migration vers le Credential Manager Windows prévue.
 - Restauration : chemin limité au dossier de backup, extraction protégée contre le zip-slip, ancien monde conservé en `SaveGames.bak`.
 - `write_world_settings` crée un `.ini.bak` avant écrasement.
+
+## Accès mobile (crates/core/src/remote.rs)
+
+- Serveur HTTP (axum) embarqué, **désactivé par défaut**, qui sert `mobile.html` (page publique, sans donnée) et une API JSON sous `/api`.
+- Toute l'API exige `Authorization: Bearer <jeton>` (128 bits, comparaison en temps constant, 300 ms de délai sur échec).
+- Filtre d'adresses : seules les connexions venant de la boucle locale, des réseaux privés, du lien local et de Tailscale (100.64.0.0/10) sont acceptées ; une adresse publique est refusée **même avec le bon jeton**.
+- Accès hors du domicile : Tailscale (réseau privé chiffré) ; aucune redirection de port sur la box.
+- Exposé : état, historique, journal, démarrer/arrêter/redémarrer, sauvegarde, annonce, expulsion. Non exposé : réglages (secrets), configuration du monde, restauration, mise à jour, bannissement.
+- Le routeur est générique sur le trait `Backend`, implémenté par `src-tauri/src/remote.rs` : testable sans Tauri.

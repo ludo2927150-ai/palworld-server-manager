@@ -14,6 +14,7 @@ pub struct AppSettings {
     pub alerts: AlertSettings,
     pub schedule: ScheduleSettings,
     pub performance: PerformanceSettings,
+    pub remote: RemoteSettings,
     /// Chemin de `steamcmd.exe` (installation et mises à jour du serveur).
     pub steamcmd_path: PathBuf,
     /// Relance automatique après un crash.
@@ -91,6 +92,33 @@ pub struct ScheduleSettings {
     pub memory_restart_percent: Option<f32>,
 }
 
+/// Accès à distance (page web mobile servie par l'application). Désactivé par défaut.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RemoteSettings {
+    pub enabled: bool,
+    pub port: u16,
+    /// Jeton secret exigé par l'API (généré automatiquement à l'activation).
+    pub token: String,
+}
+
+impl Default for RemoteSettings {
+    fn default() -> Self { Self { enabled: false, port: 8765, token: String::new() } }
+}
+
+impl RemoteSettings {
+    /// 32 caractères hexadécimaux issus du générateur aléatoire du système (128 bits).
+    pub fn generate_token() -> Result<String> {
+        let mut b = [0u8; 16];
+        getrandom::getrandom(&mut b).map_err(|e| Error::Other(format!("génération du jeton : {e}")))?;
+        Ok(b.iter().map(|x| format!("{x:02x}")).collect())
+    }
+    pub fn ensure_token(&mut self) -> Result<()> {
+        if self.token.len() < 16 { self.token = Self::generate_token()?; }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AlertSettings {
@@ -116,6 +144,7 @@ impl Default for AppSettings {
             alerts: AlertSettings::default(),
             schedule: ScheduleSettings::default(),
             performance: PerformanceSettings::default(),
+            remote: RemoteSettings::default(),
             steamcmd_path: PathBuf::from("steamcmd.exe"),
             auto_restart: true,
             start_server_on_launch: false,

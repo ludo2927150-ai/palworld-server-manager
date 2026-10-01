@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+mod remote;
 mod state;
 mod supervisor;
 mod tray;
@@ -25,6 +26,8 @@ fn main() {
             if std::env::args().any(|a| a == "--minimized") {
                 if let Some(w) = app.get_webview_window("main") { let _ = w.hide(); }
             }
+            let h = app.handle().clone();
+            tauri::async_runtime::spawn(async move { remote::apply(&h).await });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -37,6 +40,7 @@ fn main() {
             commands::announce, commands::kick_player, commands::ban_player, commands::unban_player,
             commands::update_server, commands::get_autostart, commands::set_autostart, commands::get_history, commands::get_sessions, commands::read_logs,
             commands::diagnose, commands::fix_rest, commands::network_info, commands::system_info, commands::apply_performance, commands::public_ip,
+            commands::remote_info, commands::regenerate_remote_token,
         ])
         .run(tauri::generate_context!())
         .expect("erreur au lancement de Tauri");

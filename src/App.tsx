@@ -11,8 +11,9 @@ import Logs from "./pages/Logs";
 import Diagnostic from "./pages/Diagnostic";
 import Join from "./pages/Join";
 import Performance from "./pages/Performance";
+import Mobile from "./pages/Mobile";
 
-const TABS = ["Tableau de bord", "Rejoindre", "Historique", "Performance", "Joueurs", "Configuration", "Journal", "Sauvegardes", "Diagnostic", "Application"] as const;
+const TABS = ["Tableau de bord", "Rejoindre", "Historique", "Performance", "Joueurs", "Configuration", "Journal", "Sauvegardes", "Diagnostic", "Mobile", "Application"] as const;
 type Tab = (typeof TABS)[number];
 
 export default function App() {
@@ -49,6 +50,7 @@ export default function App() {
         {tab === "Performance" && <Performance snap={snap} notify={notify} />}
         {tab === "Historique" && <History notify={notify} />}
         {tab === "Journal" && <Logs notify={notify} />}
+        {tab === "Mobile" && <Mobile notify={notify} />}
         {tab === "Diagnostic" && <Diagnostic notify={notify} />}
         {tab === "Joueurs" && <Players snap={snap} notify={notify} />}
         {tab === "Configuration" && <Config notify={notify} />}

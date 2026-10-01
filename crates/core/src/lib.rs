@@ -11,6 +11,7 @@ pub mod logs;
 pub mod monitor;
 pub mod net;
 pub mod perf;
+pub mod remote;
 pub mod rest;
 pub mod schedule;
 pub mod server;

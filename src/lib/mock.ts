@@ -1,7 +1,7 @@
 import type { AppSettings, Opt } from "./types";
 
 const settings: AppSettings = {
-  server_dir: "C:\\palworld\\PalServer", steamcmd_path: "steamcmd.exe", performance: { priority: "normal", cpu_cores: null, memory_limit_gb: null, memory_limit_restart: false },
+  server_dir: "C:\\palworld\\PalServer", steamcmd_path: "steamcmd.exe", remote: { enabled: true, port: 8765, token: "0123456789abcdef0123456789abcdef" }, performance: { priority: "normal", cpu_cores: null, memory_limit_gb: null, memory_limit_restart: false },
   schedule: { enabled: false, rules: [{ time: "04:00", action: "restart", days: [] }], announce_minutes: [15, 5, 1], memory_restart_percent: null }, launch_args: ["-useperfthreads"], auto_restart: true, close_to_tray: false, start_server_on_launch: false,
   rest: { host: "127.0.0.1", port: 8212, admin_password: "" },
   backup: { enabled: true, interval_minutes: 30, retention: 20, destination: "backups", mirror_destination: null, on_stop: true },
@@ -39,6 +39,7 @@ export async function mock<T>(cmd: string, args?: Record<string, unknown>): Prom
     case "public_ip": return r("203.0.113.7");
     case "system_info": return r({ cpu_cores: 12, total_memory_bytes: 32e9 });
     case "apply_performance": return r(2);
+    case "remote_info": return r({ running: true, error: null, tailscale_found: true, urls: [{ label: "Partout (Tailscale, 4G ou Wi-Fi)", url: "http://100.101.102.103:8765/#token=0123456789abcdef0123456789abcdef" }, { label: "Chez vous (même Wi-Fi)", url: "http://192.168.1.42:8765/#token=0123456789abcdef0123456789abcdef" }] });
     case "read_world_settings": return r({ options: world, from_default: false });
     case "write_world_settings": world = (args as { options: Opt[] }).options; return r(undefined);
     case "list_backups": return r([{ file_name: "palworld-20260930-120000.zip", path: "backups/x.zip", size_bytes: 52_000_000, created: new Date().toISOString() }]);

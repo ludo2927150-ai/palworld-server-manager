@@ -10,6 +10,9 @@ pub struct AppState {
     pub monitor: Mutex<Monitor>,
     pub alerts: Mutex<AlertEngine>,
     pub history: HistoryStore,
+    /// Tâche d'écoute de l'accès distant (None = désactivé) et dernière erreur de démarrage.
+    pub remote: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
+    pub remote_error: Mutex<Option<String>>,
     pub scheduler: Mutex<Scheduler>,
     /// Verrou : un seul redémarrage/mise à jour de maintenance à la fois.
     pub maintenance: AtomicBool,
@@ -34,6 +37,8 @@ impl AppState {
             monitor: Mutex::new(Monitor::new()),
             alerts: Mutex::new(AlertEngine::new()),
             history,
+            remote: Mutex::new(None),
+            remote_error: Mutex::new(None),
             scheduler: Mutex::new(Scheduler::new()),
             maintenance: AtomicBool::new(false),
             last_snapshot: RwLock::new(Snapshot::default()),
