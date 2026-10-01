@@ -1,5 +1,5 @@
 // Pont IPC. Hors Tauri (npm run dev dans un navigateur) on bascule sur des données factices.
-import type { AppSettings, BackupInfo, Check, BanEntry, VerifyReport, ProfileInfo, ServerUpdateInfo, UpdateInfo, KnownPlayer, PlayerSnapshot, Finding, Guest, ModsState, LogChunk, Opt, Perm, RemoteInfo, Sample, Session, Snapshot, SystemInfo, WorldSettings } from "./types";
+import type { AppSettings, BackupInfo, Check, BanEntry, VerifyReport, ProfileInfo, ServerUpdateInfo, UpdateInfo, KnownPlayer, PlayerSnapshot, AuditEntry, LockStatus, RestoreTestView, SeasonState, Finding, Guest, ModsState, LogChunk, Opt, Perm, RemoteInfo, Sample, Session, Snapshot, SystemInfo, WorldSettings } from "./types";
 import { mock } from "./mock";
 
 export const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -66,6 +66,15 @@ export const api = {
   playerSnapshotNow: (playerId: string) => call<PlayerSnapshot | null>("player_snapshot_now", { playerId }),
   playerRestore: (path: string) => call<string[]>("player_restore", { path }),
   playerExport: (path: string, targetDir?: string) => call<string>("player_export", { path, targetDir: targetDir ?? null }),
+  backupNowProtected: (name?: string) => call<BackupInfo>("backup_now_protected", { name: name ?? null }),
+  backupSetProtected: (path: string, on: boolean) => call<void>("backup_set_protected", { path, on }),
+  auditRecent: (limit?: number) => call<AuditEntry[]>("audit_recent", { limit: limit ?? 200 }),
+  lockStatus: () => call<LockStatus>("lock_status"),
+  lockVerify: (pin: string) => call<boolean>("lock_verify", { pin }),
+  lockSet: (current: string | null, newPin: string | null, autoLockMinutes: number) => call<void>("lock_set", { current, newPin, autoLockMinutes }),
+  restoreTestStatus: () => call<RestoreTestView>("restore_test_status"),
+  restoreTestNow: () => call<RestoreTestView>("restore_test_now"),
+  seasonStatus: () => call<SeasonState>("season_status"),
   diagnose: () => call<Check[]>("diagnose"),
   fixRest: (adminPassword: string) => call<void>("fix_rest", { adminPassword }),
   getAutostart: () => call<boolean>("get_autostart"),

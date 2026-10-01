@@ -2,6 +2,41 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Palette « slate » pilotée par variables : le thème clair inverse l'échelle (50 ↔ 950), tout le reste suit. */
+:root {
+  --s-50: 248 250 252;
+  --s-100: 241 245 249;
+  --s-200: 226 232 240;
+  --s-300: 203 213 225;
+  --s-400: 148 163 184;
+  --s-500: 100 116 139;
+  --s-600: 71 85 105;
+  --s-700: 51 65 85;
+  --s-800: 30 41 59;
+  --s-900: 15 23 42;
+  --s-950: 2 6 23;
+}
+:root.light {
+  --s-50: 2 6 23;
+  --s-100: 15 23 42;
+  --s-200: 30 41 59;
+  --s-300: 51 65 85;
+  --s-400: 71 85 105;
+  --s-500: 100 116 139;
+  --s-600: 148 163 184;
+  --s-700: 203 213 225;
+  --s-800: 226 232 240;
+  --s-900: 241 245 249;
+  --s-950: 248 250 252;
+  color-scheme: light;
+}
+:root:not(.light) { color-scheme: dark; }
+.light .text-emerald-300 { color: rgb(4 120 87); }
+.light .text-amber-300 { color: rgb(180 83 9); }
+.light .text-red-300, .light .text-red-400 { color: rgb(185 28 28); }
+.light .text-emerald-400 { color: rgb(5 150 105); }
+.light .text-slate-300 { color: rgb(var(--s-300)); }
+
 @layer components {
   .card { @apply rounded-xl border border-slate-800 bg-slate-900 p-4; }
   .btn { @apply rounded-lg bg-slate-800 px-3 py-1.5 text-sm font-medium hover:bg-slate-700 disabled:opacity-40; }

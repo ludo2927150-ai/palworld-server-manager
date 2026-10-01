@@ -90,3 +90,15 @@
 - **Sauvegardes individuelles** : à chaque sauvegarde du monde, les fichiers `Players/<id>.sav` et `<id>_dps.sav` de chaque joueur sont zippés dans `<destination>/joueurs/<ID>/` (dédoublonnés par empreinte, N versions gardées).
 - **Limite structurelle** : le fichier joueur ne contient que sa fiche ; objets, Pals et bases sont dans `Level.sav`. Restaurer un fichier joueur ne les ramène pas, et le transférer vers un autre monde est impossible sans réécrire `Level.sav` (format propriétaire, compression Oodle selon les versions) : non implémenté volontairement, pour ne jamais corrompre un monde.
 - **Restauration** : même monde uniquement, serveur arrêté (avec sauvegarde du monde), ancien fichier conservé en `.avant-restauration`, noms d'entrées d'archive strictement validés.
+
+## Confort, fiabilité et traçabilité (dernier lot)
+
+- **Sauvegardes protégées** : `-garde` dans le nom du fichier ; ignorées (et non comptées) par la rotation, y compris par paliers et sur la copie miroir.
+- **Test de restauration** (`core/restoretest.rs`) : relit la dernière archive, l'extrait dans un dossier temporaire, exige `Level.sav` et `LevelMeta.sav` non vides, supprime tout ; résultat dans `restore-test.json`, alerte en cas d'échec.
+- **Calendrier de saisons** (`core/season.rs`) : à partir de 04:00, applique le profil de l'événement actif (après avoir enregistré la configuration actuelle sous « avant-… ») puis revient en arrière le lendemain de la fin ; passe par le cycle sûr.
+- **Rapport hebdomadaire** (`summary::weekly`, `WeeklyTrigger` avec rattrapage dans la semaine).
+- **Annonces personnelles** (`announce::welcome_for`) : anniversaire > message personnel > retour après absence > bienvenue générale.
+- **Audit** (`core/audit.rs`) : `app`, `mobile:<nom>`, `discord:<id>`, `auto:<étiquette>` ; le trait `Backend::audit` permet aux accès distants d'y écrire sans connaître l'implémentation.
+- **Verrou par code** (`core/lock.rs`) : SHA-256 salé itéré ; garde-fou d'affichage, pas une protection contre l'accès aux fichiers ou à la session Windows.
+- **Diagnostic** : chaque point en échec porte un conseil en français ; contrôles ajoutés (monde, disque, dossier de sauvegarde, copie miroir, cohérence des mods).
+- **Thème clair** : la palette « slate » de Tailwind passe par des variables CSS inversées.

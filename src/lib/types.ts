@@ -6,26 +6,27 @@ export interface Snapshot {
   total_memory_bytes: number; metrics: Metrics | null; players: Player[];
 }
 export interface Opt { key: string; value: string; quoted: boolean }
-export interface BackupInfo { file_name: string; path: string; size_bytes: number; created: string }
+export interface BackupInfo { file_name: string; path: string; size_bytes: number; created: string; protected: boolean }
 export interface AppSettings {
   server_dir: string; steamcmd_path: string;
   access: AccessSettings;
   announcements: AnnouncementSettings;
   remote: { enabled: boolean; port: number; token: string; guests: Guest[] };
   performance: PerformanceSettings;
-  schedule: { enabled: boolean; rules: ScheduleRule[]; announce_minutes: number[]; memory_restart_percent: number | null; memory_restart_wait_empty_minutes: number };
+  schedule: { enabled: boolean; rules: ScheduleRule[]; announce_minutes: number[]; memory_restart_percent: number | null; memory_restart_wait_empty_minutes: number; events: SeasonEvent[] };
   launch_args: string[]; auto_restart: boolean; close_to_tray: boolean; start_server_on_launch: boolean; setup_done: boolean; log_file: string | null; capture_console: boolean;
   rest: { host: string; port: number; admin_password: string };
-  backup: { enabled: boolean; interval_minutes: number; retention: number; destination: string; mirror_destination: string | null; on_stop: boolean; tiered: boolean; player_snapshots: boolean; player_keep: number };
+  backup: { enabled: boolean; interval_minutes: number; retention: number; destination: string; mirror_destination: string | null; on_stop: boolean; tiered: boolean; player_snapshots: boolean; player_keep: number; restore_test_days: number | null };
   alerts: {
     discord_webhook: string | null; ntfy_url: string | null; on_crash: boolean; on_player_join: boolean;
     on_player_leave: boolean; memory_threshold_percent: number | null; cooldown_secs: number;
-    daily_summary_time: string | null; desktop: boolean;
+    daily_summary_time: string | null; desktop: boolean; weekly_report_day: number | null;
     stale_backup_hours: number | null; min_free_disk_gb: number | null;
   };
   watchdog: { enabled: boolean; hung_minutes: number; crash_loop_max: number; crash_loop_window_minutes: number };
   mod_automation: { managed_ids: string[]; auto_update: boolean; check_every_minutes: number; packs: { name: string; package_names: string[] }[] };
   upnp: { enabled: boolean };
+  lock: { enabled: boolean; salt: string; hash: string; auto_lock_minutes: number };
   server_update: { enabled: boolean; check_every_minutes: number; warn_minutes: number };
   discord_bot: { enabled: boolean; bot_token: string; allowed_user_ids: string[]; allow_control: boolean };
 }
@@ -53,7 +54,8 @@ export interface ModsState {
 }
 export interface Finding { id: string; severity: "critical" | "warning" | "info"; title: string; advice: string; count: number; sample: string }
 export interface AnnouncementRule { id: string; text: string; every_minutes: number; enabled: boolean }
-export interface AnnouncementSettings { enabled: boolean; only_with_players: boolean; welcome: string | null; rules: AnnouncementRule[] }
+export interface PersonalMessage { user_id: string; name: string; text: string | null; birthday: string | null }
+export interface AnnouncementSettings { enabled: boolean; only_with_players: boolean; welcome: string | null; rules: AnnouncementRule[]; personal: PersonalMessage[]; welcome_back_days: number; welcome_back_text: string | null }
 export interface AllowedPlayer { user_id: string; name: string }
 export interface AccessSettings { whitelist_enabled: boolean; allowed: AllowedPlayer[]; kick_message: string }
 export interface KnownPlayer {
@@ -67,3 +69,8 @@ export interface UpdateInfo { current: string; latest: string; notes: string; ur
 export interface VerifyReport { files: number; bytes: number }
 export interface ProfileInfo { name: string; saved_at: number; options: number }
 export interface ServerUpdateInfo { installed: string | null; latest: string; outdated: boolean }
+export interface SeasonEvent { name: string; start: string; end: string; profile: string; announce: string | null }
+export interface SeasonState { applied: string | null; return_profile: string | null }
+export interface AuditEntry { t: number; who: string; action: string; detail: string }
+export interface LockStatus { enabled: boolean; auto_lock_minutes: number }
+export interface RestoreTestView { t: number; ok: boolean; detail: string }

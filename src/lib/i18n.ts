@@ -8,7 +8,7 @@ const EN: Record<string, string> = {
   "MODE DÉMO — données fictives affichées dans le navigateur. Lancez « npm run tauri dev » (ou l'installeur) pour piloter un vrai serveur.":
     "DEMO MODE — fake data shown in the browser. Run “npm run tauri dev” (or the installer) to manage a real server.",
   "Nouvelle version disponible : {latest} (vous avez {current}).": "New version available: {latest} (you have {current}).",
-  "Télécharger et installer": "Download and install", "Téléchargement…": "Downloading…", "Plus tard": "Later", "Langue": "Language",
+  "Télécharger et installer": "Download and install", "Téléchargement…": "Downloading…", "Plus tard": "Later", "Langue": "Language", "Thème": "Theme", "Sombre": "Dark", "Clair": "Light",
   // Assistant
   "Bienvenue — configuration en 5 étapes": "Welcome — 5-step setup", "Passer": "Skip", "Précédent": "Back", "Suivant": "Next", "Terminer": "Finish",
   "Dossier du serveur": "Server folder", "SteamCMD": "SteamCMD", "API REST": "REST API", "Options": "Options", "Vérification": "Check",

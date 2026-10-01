@@ -14,6 +14,7 @@ import Performance from "./pages/Performance";
 import Mobile from "./pages/Mobile";
 import Mods from "./pages/Mods";
 import { t, getLang, setLang } from "./lib/i18n";
+import LockScreen from "./components/LockScreen";
 import Wizard from "./pages/Wizard";
 import Announcements from "./pages/Announcements";
 
@@ -22,10 +23,14 @@ type Tab = (typeof TABS)[number];
 
 export default function App() {
   const [, bump] = useState(0);
+  const [theme, setThemeState] = useState<"dark" | "light">(() => { try { return localStorage.getItem("theme") === "light" ? "light" : "dark"; } catch { return "dark"; } });
+  useEffect(() => { document.documentElement.classList.toggle("light", theme === "light"); try { localStorage.setItem("theme", theme); } catch { /* ignoré */ } }, [theme]);
   const [tab, setTab] = useState<Tab>("Tableau de bord");
   const [snap, setSnap] = useState<Snapshot | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [wizard, setWizard] = useState(false);
+  const [locked, setLocked] = useState(false);
+  const [autoLock, setAutoLock] = useState(0);
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
   const [updating, setUpdating] = useState(false);
   const notify = useCallback((m: string) => { setToast(m); setTimeout(() => setToast(null), 4000); }, []);
@@ -37,6 +42,23 @@ export default function App() {
     const iv = setInterval(check, 6 * 3600 * 1000);
     return () => { clearTimeout(t0); clearInterval(iv); };
   }, []);
+
+  // Verrou : au lancement si un code existe, puis après N minutes sans activité.
+  useEffect(() => {
+    api.lockStatus().then((l) => { setLocked(l.enabled); setAutoLock(l.enabled ? l.auto_lock_minutes : 0); }).catch(() => {});
+    // Réglage modifié depuis l'onglet Application : on rafraîchit seulement le délai (jamais l'état verrouillé).
+    const id = setInterval(() => api.lockStatus().then((l) => setAutoLock(l.enabled ? l.auto_lock_minutes : 0)).catch(() => {}), 30_000);
+    return () => clearInterval(id);
+  }, []);
+  useEffect(() => {
+    if (!autoLock || locked) return;
+    let last = Date.now();
+    const bump = () => { last = Date.now(); };
+    const evs = ["mousemove", "keydown", "mousedown", "touchstart"] as const;
+    evs.forEach((e) => window.addEventListener(e, bump));
+    const id = setInterval(() => { if (Date.now() - last >= autoLock * 60_000) setLocked(true); }, 15_000);
+    return () => { evs.forEach((e) => window.removeEventListener(e, bump)); clearInterval(id); };
+  }, [autoLock, locked]);
 
   useEffect(() => { if (inTauri) api.getSettings().then((s) => setWizard(!s.setup_done)).catch(() => {}); }, []);
 
@@ -50,7 +72,8 @@ export default function App() {
 
   return (
     <div className="flex h-screen flex-col">
-      {wizard && <Wizard onClose={() => setWizard(false)} notify={notify} />}
+      {locked && <LockScreen onUnlock={() => setLocked(false)} />}
+      {wizard && !locked && <Wizard onClose={() => setWizard(false)} notify={notify} />}
       {!inTauri && (
         <div className="bg-amber-500 px-4 py-1.5 text-center text-sm font-medium text-black" role="alert">
           {t("MODE DÉMO — données fictives affichées dans le navigateur. Lancez « npm run tauri dev » (ou l'installeur) pour piloter un vrai serveur.")}
@@ -72,7 +95,12 @@ export default function App() {
         {TABS.map((tb) => (
           <button key={tb} onClick={() => setTab(tb)} className={`mb-1 block w-full rounded-lg px-3 py-2 text-left text-sm ${tb === tab ? "bg-slate-800" : "hover:bg-slate-900"}`}>{t(tb)}</button>
         ))}
-        <label className="mt-4 block px-2 text-xs text-slate-500">{t("Langue")}
+        <label className="mt-4 block px-2 text-xs text-slate-500">{t("Thème")}
+          <select className="input mt-1" value={theme} onChange={(e) => setThemeState(e.target.value === "light" ? "light" : "dark")}>
+            <option value="dark">{t("Sombre")}</option><option value="light">{t("Clair")}</option>
+          </select>
+        </label>
+        <label className="mt-2 block px-2 text-xs text-slate-500">{t("Langue")}
           <select className="input mt-1" value={getLang()} onChange={(e) => { setLang(e.target.value as "fr" | "en"); bump((n) => n + 1); }}>
             <option value="fr">Français</option><option value="en">English</option>
           </select>

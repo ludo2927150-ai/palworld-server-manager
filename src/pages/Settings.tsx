@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
-import type { AppSettings, RuleAction, ScheduleRule } from "../lib/types";
+import type { SeasonEvent, AppSettings, RuleAction, ScheduleRule } from "../lib/types";
 
 const DAYS = ["L", "M", "M", "J", "V", "S", "D"];
 const DAY_NAMES = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"];
@@ -63,6 +63,60 @@ function ScheduleEditor({ s, setS, profiles }: { s: AppSettings; setS: (v: AppSe
   );
 }
 
+function SeasonEditor({ s, setS, profiles }: { s: AppSettings; setS: (v: AppSettings) => void; profiles: string[] }) {
+  const [status, setStatus] = useState<string | null>(null);
+  useEffect(() => { api.seasonStatus().then((x) => setStatus(x.applied)).catch(() => {}); }, []);
+  const set = (events: SeasonEvent[]) => setS({ ...s, schedule: { ...s.schedule, events } });
+  const upd = (i: number, patch: Partial<SeasonEvent>) => set(s.schedule.events.map((e, j) => (j === i ? { ...e, ...patch } : e)));
+  const today = new Date().toISOString().slice(0, 10);
+  return (
+    <div className="card space-y-3">
+      <h2 className="font-semibold">Calendrier de saisons</h2>
+      <p className="text-sm text-slate-400">Un profil de configuration appliqué pendant une période (« semaine XP ×2 » du 1er au 7), puis retour automatique à la configuration d'avant. L'application doit tourner : à partir de 04:00 le premier jour, elle enregistre la configuration actuelle (profil « avant-… »), applique le profil et redémarre le serveur proprement (préavis, sauvegarde, contrôle) ; le lendemain de la fin, elle revient en arrière. Créez d'abord le profil dans l'onglet Configuration.</p>
+      {status && <p className="text-sm text-emerald-300" role="status">Événement en cours : {status}</p>}
+      {s.schedule.events.map((e, i) => (
+        <div key={i} className="flex flex-wrap items-center gap-2">
+          <input className="input !w-44" placeholder="Nom (ex. Semaine XP)" value={e.name} onChange={(ev) => upd(i, { name: ev.target.value })} />
+          <input className="input !w-40" type="date" aria-label="Début" value={e.start} onChange={(ev) => upd(i, { start: ev.target.value })} />
+          <span className="text-slate-500">au</span>
+          <input className="input !w-40" type="date" aria-label="Fin (incluse)" min={e.start || today} value={e.end} onChange={(ev) => upd(i, { end: ev.target.value })} />
+          <select className="input !w-44" aria-label="Profil" value={e.profile} onChange={(ev) => upd(i, { profile: ev.target.value })}>
+            <option value="">Profil…</option>
+            {profiles.map((p) => <option key={p} value={p}>{p}</option>)}
+          </select>
+          <input className="input min-w-[12rem] flex-1" maxLength={300} placeholder="Annonce aux joueurs (facultatif)" value={e.announce ?? ""} onChange={(ev) => upd(i, { announce: ev.target.value || null })} />
+          <button type="button" className="btn" onClick={() => set(s.schedule.events.filter((_, j) => j !== i))}>Supprimer</button>
+        </div>
+      ))}
+      <button type="button" className="btn" onClick={() => set([...s.schedule.events, { name: "", start: today, end: today, profile: "", announce: null }])}>+ Ajouter un événement</button>
+    </div>
+  );
+}
+
+function LockCard({ notify }: { notify: (m: string) => void }) {
+  const [st, setSt] = useState<{ enabled: boolean; auto_lock_minutes: number } | null>(null);
+  const [cur, setCur] = useState("");
+  const [pin, setPin] = useState("");
+  const [auto, setAuto] = useState(0);
+  const load = () => api.lockStatus().then((x) => { setSt(x); setAuto(x.auto_lock_minutes); }).catch(() => {});
+  useEffect(() => { load(); }, []);
+  if (!st) return null;
+  const apply = (newPin: string | null) => api.lockSet(cur || null, newPin, auto).then(() => { notify(newPin ? "Code enregistré" : "Verrou retiré"); setCur(""); setPin(""); load(); }).catch((e) => notify(String(e)));
+  return (
+    <div className="card space-y-3">
+      <h3 className="font-semibold">Verrou par code</h3>
+      <p className="text-sm text-slate-400">Demande un code pour utiliser l'application. C'est un garde-fou contre l'usage involontaire ou curieux, pas une protection contre quelqu'un qui a accès à votre session Windows ou à vos fichiers.</p>
+      <div className="flex flex-wrap items-end gap-2">
+        {st.enabled && <label className="text-sm"><span className="mb-1 block text-slate-400">Code actuel</span><input className="input !w-40" type="password" autoComplete="off" value={cur} onChange={(e) => setCur(e.target.value)} /></label>}
+        <label className="text-sm"><span className="mb-1 block text-slate-400">{st.enabled ? "Nouveau code" : "Code (4 à 32 caractères)"}</span><input className="input !w-48" type="password" autoComplete="off" value={pin} onChange={(e) => setPin(e.target.value)} /></label>
+        <label className="text-sm"><span className="mb-1 block text-slate-400">Reverrouiller après (min, 0 = jamais)</span><input className="input !w-24" type="number" min={0} max={1440} value={auto} onChange={(e) => setAuto(Math.max(0, Math.floor(+e.target.value || 0)))} /></label>
+        <button className="btn-primary" disabled={pin.length < 4} onClick={() => apply(pin)}>{st.enabled ? "Changer le code" : "Activer le verrou"}</button>
+        {st.enabled && <button className="btn" onClick={() => apply(null)}>Retirer le verrou</button>}
+      </div>
+    </div>
+  );
+}
+
 const Row = ({ label, children }: { label: string; children: React.ReactNode }) => (
   <label className="block text-sm"><span className="mb-1 block text-slate-400">{label}</span>{children}</label>
 );
@@ -101,6 +155,7 @@ export default function Settings({ notify }: { notify: (m: string) => void }) {
         <Row label="Redémarrage auto après crash"><input type="checkbox" checked={s.auto_restart} onChange={(e) => setS({ ...s, auto_restart: e.target.checked })} /></Row>
       </div>
       <ScheduleEditor s={s} setS={setS} profiles={profiles} />
+      <SeasonEditor s={s} setS={setS} profiles={profiles} />
       <div className="card grid gap-4 md:grid-cols-2">
         <Row label="Chemin de steamcmd.exe"><input className="input" value={s.steamcmd_path} onChange={(e) => setS({ ...s, steamcmd_path: e.target.value })} /></Row>
         <Row label="Annonces (minutes avant, ex. 15, 5, 1)"><input className="input" value={s.schedule.announce_minutes.join(", ")} onChange={(e) => setS({ ...s, schedule: { ...s.schedule, announce_minutes: e.target.value.split(",").map((t) => parseInt(t, 10)).filter((n) => n > 0) } })} /></Row>
@@ -112,6 +167,7 @@ export default function Settings({ notify }: { notify: (m: string) => void }) {
         <Row label="Intervalle (minutes)"><input className="input" type="number" min={1} value={s.backup.interval_minutes} onChange={(e) => setS({ ...s, backup: { ...s.backup, interval_minutes: +e.target.value } })} /></Row>
         <Row label="Rétention par paliers (24 h complètes, puis 1 par jour sur 7 jours, puis 1 par semaine sur 4 semaines) au lieu d'un nombre fixe"><input type="checkbox" checked={s.backup.tiered} onChange={(e) => setS({ ...s, backup: { ...s.backup, tiered: e.target.checked } })} /></Row>
         <Row label="Sauvegarder aussi la fiche de chaque joueur à chaque sauvegarde du monde"><input type="checkbox" checked={s.backup.player_snapshots} onChange={(e) => setS({ ...s, backup: { ...s.backup, player_snapshots: e.target.checked } })} /></Row>
+        <Row label="Test de restauration automatique tous les (jours, vide = désactivé)"><input className="input" type="number" min={1} max={90} value={s.backup.restore_test_days ?? ""} onChange={(e) => setS({ ...s, backup: { ...s.backup, restore_test_days: e.target.value ? Math.max(1, +e.target.value) : null } })} /></Row>
         <Row label="Versions gardées par joueur"><input className="input" type="number" min={1} value={s.backup.player_keep} onChange={(e) => setS({ ...s, backup: { ...s.backup, player_keep: Math.max(1, +e.target.value || 1) } })} /></Row>
         <Row label="Nombre de backups conservés (sans paliers)"><input className="input" type="number" min={1} value={s.backup.retention} onChange={(e) => setS({ ...s, backup: { ...s.backup, retention: +e.target.value } })} /></Row>
         <Row label="Second emplacement (copie de chaque sauvegarde, ex. autre disque)"><input className="input" placeholder="D:\Sauvegardes\Palworld" value={s.backup.mirror_destination ?? ""} onChange={(e) => setS({ ...s, backup: { ...s.backup, mirror_destination: e.target.value.trim() ? e.target.value : null } })} /></Row>
@@ -123,6 +179,9 @@ export default function Settings({ notify }: { notify: (m: string) => void }) {
         <Row label="Notifications Windows"><input type="checkbox" checked={s.alerts.desktop} onChange={(e) => setS({ ...s, alerts: { ...s.alerts, desktop: e.target.checked } })} /></Row>
         <Row label="Résumé quotidien à (HH:MM, vide = désactivé)"><input className="input" placeholder="20:00" value={s.alerts.daily_summary_time ?? ""} onChange={(e) => setS({ ...s, alerts: { ...s.alerts, daily_summary_time: nul(e.target.value) } })} /></Row>
         <Row label="Seuil mémoire (%)"><input className="input" type="number" min={1} max={100} value={s.alerts.memory_threshold_percent ?? ""} onChange={(e) => setS({ ...s, alerts: { ...s.alerts, memory_threshold_percent: e.target.value ? +e.target.value : null } })} /></Row>
+        <Row label="Rapport hebdomadaire (Discord / ntfy) le"><select className="input" value={s.alerts.weekly_report_day ?? ""} onChange={(e) => setS({ ...s, alerts: { ...s.alerts, weekly_report_day: e.target.value === "" ? null : +e.target.value } })}>
+          <option value="">Désactivé</option>{DAY_NAMES.map((d, i) => <option key={d} value={i}>{d}</option>)}
+        </select></Row>
         <Row label="Alerte si aucune sauvegarde depuis (heures, vide = désactivé)"><input className="input" type="number" min={1} value={s.alerts.stale_backup_hours ?? ""} onChange={(e) => setS({ ...s, alerts: { ...s.alerts, stale_backup_hours: e.target.value ? +e.target.value : null } })} /></Row>
         <Row label="Alerte si espace disque libre sous (Go, vide = désactivé)"><input className="input" type="number" min={1} value={s.alerts.min_free_disk_gb ?? ""} onChange={(e) => setS({ ...s, alerts: { ...s.alerts, min_free_disk_gb: e.target.value ? +e.target.value : null } })} /></Row>
         <Row label="Alertes"><div className="flex gap-4">
@@ -151,6 +210,7 @@ export default function Settings({ notify }: { notify: (m: string) => void }) {
           <Row label="Autoriser le contrôle (démarrer, arrêter, redémarrer, sauvegarder, annoncer) — sinon lecture seule"><input type="checkbox" checked={s.discord_bot.allow_control} onChange={(e) => setS({ ...s, discord_bot: { ...s.discord_bot, allow_control: e.target.checked } })} /></Row>
         </div>
       </div>
+      <LockCard notify={notify} />
       <div className="card space-y-3">
         <h3 className="font-semibold">Auto-réparation</h3>
         <p className="text-sm text-slate-400">Si le processus tourne mais que l'API ne répond plus (après avoir répondu au moins une fois), le serveur est redémarré. Après plusieurs crashs rapprochés, la relance automatique s'arrête et vous êtes alerté, au lieu de boucler. Tout redémarrage automatique est suivi d'un contrôle : si le serveur ne répond pas, les mods fautifs sont désactivés, puis le monde est restauré depuis la sauvegarde de sûreté.</p>

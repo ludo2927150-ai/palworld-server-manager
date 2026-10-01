@@ -21,7 +21,7 @@ export default function Diagnostic({ notify }: { notify: (m: string) => void }) 
             {checks.map((c) => (
               <li key={c.id} className="flex gap-2">
                 <span aria-label={c.ok ? "OK" : "Problème"} className={c.ok ? "text-emerald-400" : "text-red-400"}>{c.ok ? "✔" : "✖"}</span>
-                <span>{c.label}{c.detail && <span className="ml-2 text-xs text-slate-500">{c.detail}</span>}</span>
+                <span>{c.label}{c.detail && <span className="ml-2 text-xs text-slate-500">{c.detail}</span>}{!c.ok && c.hint && <span className="mt-0.5 block text-xs text-amber-300">→ {c.hint}</span>}</span>
               </li>
             ))}
           </ul>
