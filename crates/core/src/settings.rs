@@ -13,6 +13,7 @@ pub struct AppSettings {
     pub backup: BackupSettings,
     pub alerts: AlertSettings,
     pub schedule: ScheduleSettings,
+    pub performance: PerformanceSettings,
     /// Chemin de `steamcmd.exe` (installation et mises à jour du serveur).
     pub steamcmd_path: PathBuf,
     /// Relance automatique après un crash.
@@ -40,6 +41,26 @@ pub struct BackupSettings {
     pub mirror_destination: Option<PathBuf>,
     /// Sauvegarde systématique après chaque arrêt ou redémarrage du serveur (monde figé = copie cohérente).
     pub on_stop: bool,
+}
+
+/// Priorité CPU du processus serveur (la priorité « temps réel » est volontairement absente : elle peut figer Windows).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Priority { BelowNormal, #[default] Normal, AboveNormal, High }
+
+/// Leviers de performance réellement disponibles pour un serveur natif Windows. La RAM ne s'« alloue » pas
+/// (Palworld prend ce dont il a besoin) : on fixe une limite avec alerte ou redémarrage automatique.
+/// Les options de threads au lancement se règlent via `launch_args`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(default)]
+pub struct PerformanceSettings {
+    pub priority: Priority,
+    /// Cœurs logiques autorisés (0, 1, 2…) ; `None` = tous.
+    pub cpu_cores: Option<Vec<u32>>,
+    /// Limite de RAM du processus serveur, en Go ; `None` = aucune.
+    pub memory_limit_gb: Option<f32>,
+    /// Au-delà de la limite : redémarrer (avec annonce d'1 minute) au lieu d'alerter seulement.
+    pub memory_limit_restart: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -92,6 +113,7 @@ impl Default for AppSettings {
             backup: BackupSettings::default(),
             alerts: AlertSettings::default(),
             schedule: ScheduleSettings::default(),
+            performance: PerformanceSettings::default(),
             steamcmd_path: PathBuf::from("steamcmd.exe"),
             auto_restart: true,
             close_to_tray: false,

@@ -51,3 +51,18 @@ impl Monitor {
         snap
     }
 }
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SystemInfo {
+    pub cpu_cores: usize,
+    pub total_memory_bytes: u64,
+}
+
+pub fn system_info() -> SystemInfo {
+    let mut sys = System::new();
+    sys.refresh_memory();
+    SystemInfo {
+        cpu_cores: std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1),
+        total_memory_bytes: sys.total_memory(),
+    }
+}

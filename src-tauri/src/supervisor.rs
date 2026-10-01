@@ -2,7 +2,7 @@
 //! redémarrage auto après crash. Émet l'événement `snapshot` vers le frontend à chaque tick.
 
 use crate::state::AppState;
-use palmanager_core::{alerts, backup, history::{PlayerEvent, Sample}, summary, rest::RestClient, schedule::Action, settings::{AppSettings, RuleAction}};
+use palmanager_core::{alerts, backup, perf, server::find_server_pids, history::{PlayerEvent, Sample}, summary, rest::RestClient, schedule::Action, settings::{AppSettings, RuleAction}};
 use std::{collections::HashSet, sync::atomic::Ordering, time::{Duration, Instant}};
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -55,6 +55,8 @@ pub fn spawn(app: AppHandle) {
         let mut last_backup = Instant::now();
         let mut daily = palmanager_core::schedule::DailyTrigger::new();
         let mut prev_running = false;
+        let mut perf_applied: Option<(String, Vec<u32>)> = None; // (réglages, PID déjà traités)
+        let mut last_limit_restart: Option<Instant> = None;
         let mut last_backup_alert: Option<Instant> = None;
         let mut last_sample = 0i64;
         let mut known: HashSet<String> = HashSet::new();
@@ -103,6 +105,39 @@ pub fn spawn(app: AppHandle) {
                 }
                 if let Some(th) = s.schedule.memory_restart_percent.filter(|_| s.schedule.enabled && snap.running) {
                     if snap.memory_percent >= th {
+                        if let Some(api) = &api { let _ = api.announce("Mémoire élevée : redémarrage dans 1 minute.").await; }
+                        tokio::time::sleep(Duration::from_secs(60)).await;
+                        maintenance_restart(&st, &s).await;
+                    }
+                }
+            }
+
+            // Priorité / cœurs : appliqués à chaque nouveau processus serveur (démarrage, relance, serveur adopté)
+            // et dès que les réglages changent. Aucun appel PowerShell tant que les réglages restent ceux par défaut.
+            if snap.running {
+                let sig = serde_json::to_string(&s.performance).unwrap_or_default();
+                let mut pids = find_server_pids();
+                pids.sort_unstable();
+                let changed = match &perf_applied { Some((old_sig, old)) => *old_sig != sig || *old != pids, None => true };
+                if changed {
+                    let is_default = s.performance == Default::default();
+                    if !(is_default && perf_applied.is_none()) {
+                        let (p2, cores) = (s.performance.clone(), palmanager_core::monitor::system_info().cpu_cores);
+                        let _ = tokio::task::spawn_blocking(move || perf::apply(&p2, cores)).await;
+                    }
+                    perf_applied = Some((sig, pids));
+                }
+            }
+
+            // Limite de RAM du serveur (réglée dans l'onglet Performance) : alerte, ou redémarrage avec annonce d'1 minute,
+            // au plus un redémarrage par 30 minutes pour éviter une boucle si la limite est trop basse.
+            if let (Some(limit), true, false) = (s.performance.memory_limit_gb, snap.running, maintenance) {
+                let used_gb = snap.memory_bytes as f64 / 1e9;
+                if used_gb >= limit as f64 && last_limit_restart.map_or(true, |t| t.elapsed() >= Duration::from_secs(1800)) {
+                    last_limit_restart = Some(Instant::now());
+                    let txt = format!("🟠 RAM du serveur : {used_gb:.1} Go (limite {limit:.1} Go){}", if s.performance.memory_limit_restart { " — redémarrage dans 1 minute." } else { "." });
+                    let _ = alerts::dispatch_text(&s.alerts, &txt).await;
+                    if s.performance.memory_limit_restart {
                         if let Some(api) = &api { let _ = api.announce("Mémoire élevée : redémarrage dans 1 minute.").await; }
                         tokio::time::sleep(Duration::from_secs(60)).await;
                         maintenance_restart(&st, &s).await;

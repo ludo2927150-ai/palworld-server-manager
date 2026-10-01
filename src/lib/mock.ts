@@ -1,7 +1,7 @@
 import type { AppSettings, Opt } from "./types";
 
 const settings: AppSettings = {
-  server_dir: "C:\\palworld\\PalServer", steamcmd_path: "steamcmd.exe",
+  server_dir: "C:\\palworld\\PalServer", steamcmd_path: "steamcmd.exe", performance: { priority: "normal", cpu_cores: null, memory_limit_gb: null, memory_limit_restart: false },
   schedule: { enabled: false, rules: [{ time: "04:00", action: "restart", days: [] }], announce_minutes: [15, 5, 1], memory_restart_percent: null }, launch_args: ["-useperfthreads"], auto_restart: true, close_to_tray: false,
   rest: { host: "127.0.0.1", port: 8212, admin_password: "" },
   backup: { enabled: true, interval_minutes: 30, retention: 20, destination: "backups", mirror_destination: null, on_stop: true },
@@ -37,6 +37,8 @@ export async function mock<T>(cmd: string, args?: Record<string, unknown>): Prom
     case "get_autostart": return r(false);
     case "network_info": return r({ lan_ip: "192.168.1.42" });
     case "public_ip": return r("203.0.113.7");
+    case "system_info": return r({ cpu_cores: 12, total_memory_bytes: 32e9 });
+    case "apply_performance": return r(2);
     case "read_world_settings": return r({ options: world, from_default: false });
     case "write_world_settings": world = (args as { options: Opt[] }).options; return r(undefined);
     case "list_backups": return r([{ file_name: "palworld-20260930-120000.zip", path: "backups/x.zip", size_bytes: 52_000_000, created: new Date().toISOString() }]);

@@ -10,8 +10,9 @@ import History from "./pages/History";
 import Logs from "./pages/Logs";
 import Diagnostic from "./pages/Diagnostic";
 import Join from "./pages/Join";
+import Performance from "./pages/Performance";
 
-const TABS = ["Tableau de bord", "Rejoindre", "Historique", "Joueurs", "Configuration", "Journal", "Sauvegardes", "Diagnostic", "Application"] as const;
+const TABS = ["Tableau de bord", "Rejoindre", "Historique", "Performance", "Joueurs", "Configuration", "Journal", "Sauvegardes", "Diagnostic", "Application"] as const;
 type Tab = (typeof TABS)[number];
 
 export default function App() {
@@ -45,6 +46,7 @@ export default function App() {
       <main className="min-h-0 flex-1 overflow-y-auto p-6">
         {tab === "Tableau de bord" && <Dashboard snap={snap} notify={notify} />}
         {tab === "Rejoindre" && <Join notify={notify} />}
+        {tab === "Performance" && <Performance snap={snap} notify={notify} />}
         {tab === "Historique" && <History notify={notify} />}
         {tab === "Journal" && <Logs notify={notify} />}
         {tab === "Diagnostic" && <Diagnostic notify={notify} />}

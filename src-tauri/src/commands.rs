@@ -219,3 +219,14 @@ pub async fn network_info() -> Result<NetworkInfo> {
 /// IP publique : appelle un service externe (api.ipify.org), uniquement quand l'utilisateur clique.
 #[tauri::command]
 pub async fn public_ip() -> Result<String> { palmanager_core::net::public_ip().await }
+
+#[tauri::command]
+pub async fn system_info() -> Result<palmanager_core::monitor::SystemInfo> { Ok(palmanager_core::monitor::system_info()) }
+
+/// Applique tout de suite priorité et cœurs aux processus du serveur en cours ; renvoie leur nombre.
+#[tauri::command]
+pub async fn apply_performance(st: S<'_>) -> Result<usize> {
+    let p = st.settings.read().await.performance.clone();
+    let cores = palmanager_core::monitor::system_info().cpu_cores;
+    tokio::task::spawn_blocking(move || palmanager_core::perf::apply(&p, cores)).await.map_err(|e| Error::Other(e.to_string()))?
+}

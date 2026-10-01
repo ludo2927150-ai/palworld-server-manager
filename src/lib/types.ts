@@ -9,6 +9,7 @@ export interface Opt { key: string; value: string; quoted: boolean }
 export interface BackupInfo { file_name: string; path: string; size_bytes: number; created: string }
 export interface AppSettings {
   server_dir: string; steamcmd_path: string;
+  performance: PerformanceSettings;
   schedule: { enabled: boolean; rules: ScheduleRule[]; announce_minutes: number[]; memory_restart_percent: number | null };
   launch_args: string[]; auto_restart: boolean; close_to_tray: boolean;
   rest: { host: string; port: number; admin_password: string };
@@ -26,3 +27,6 @@ export interface Check { id: string; label: string; ok: boolean; detail: string 
 export interface WorldSettings { options: Opt[]; from_default: boolean }
 export type RuleAction = "start" | "stop" | "restart";
 export interface ScheduleRule { time: string; action: RuleAction; days: number[] }
+export type Priority = "belownormal" | "normal" | "abovenormal" | "high";
+export interface PerformanceSettings { priority: Priority; cpu_cores: number[] | null; memory_limit_gb: number | null; memory_limit_restart: boolean }
+export interface SystemInfo { cpu_cores: number; total_memory_bytes: number }
