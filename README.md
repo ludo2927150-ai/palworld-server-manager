@@ -61,3 +61,7 @@ Ne pas exposer ce port sur Internet.
 - [Architecture](docs/ARCHITECTURE.md)
 - [Feuille de route](docs/ROADMAP.md)
 - [Contribuer](CONTRIBUTING.md)
+
+## Données de l'application
+
+L'installeur ne contient aucune donnée personnelle : réglages, historique, carnet de joueurs et profils sont créés au premier lancement dans `%APPDATA%\dev.palmanager.app`, et les mots de passe/jetons dans le Gestionnaire d'identifiants Windows (entrées « PalworldServerManager »). Au premier lancement, un assistant de configuration s'affiche. Pour repartir de zéro sur un PC : désinstaller, supprimer ce dossier et ces entrées.
