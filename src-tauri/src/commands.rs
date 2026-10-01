@@ -137,7 +137,7 @@ pub async fn update_server(st: S<'_>) -> Result<String> {
             st.expected_stop.store(true, Ordering::SeqCst);
             st.server.stop(&s, Duration::from_secs(60)).await?;
         }
-        let out = steamcmd::update(&s.steamcmd_path, &s.server_dir).await;
+        let out = steamcmd::update(&s.steamcmd_exe(), &s.server_dir).await;
         st.expected_stop.store(false, Ordering::SeqCst);
         if was_running { st.server.start(&s).await?; }
         out

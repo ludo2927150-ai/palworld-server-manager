@@ -124,6 +124,14 @@ impl Default for AlertSettings {
 }
 
 impl AppSettings {
+    /// Chemin de `steamcmd.exe`, tolérant : guillemets/espaces superflus ignorés, et si le chemin saisi est un
+    /// dossier (ex. `C:\\SteamCMD`) on y cherche `steamcmd.exe`.
+    pub fn steamcmd_exe(&self) -> PathBuf {
+        let raw = self.steamcmd_path.to_string_lossy();
+        let p = PathBuf::from(raw.trim().trim_matches(|c| c == '"' || c == '\'').trim());
+        if p.is_dir() { p.join("steamcmd.exe") } else { p }
+    }
+
     pub fn exe_path(&self) -> PathBuf { self.server_dir.join("PalServer.exe") }
     /// `<server>/Pal/Saved/Config/WindowsServer/PalWorldSettings.ini`
     pub fn world_settings_path(&self) -> PathBuf {
@@ -168,6 +176,20 @@ impl AppSettings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn steamcmd_path_is_forgiving() {
+        let dir = std::env::temp_dir().join(format!("pal-steam-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("steamcmd.exe"), b"").unwrap();
+        let with = |p: String| AppSettings { steamcmd_path: PathBuf::from(p), ..Default::default() }.steamcmd_exe();
+        let d = dir.to_string_lossy().to_string();
+        assert_eq!(with(d.clone()), dir.join("steamcmd.exe"));                              // dossier
+        assert_eq!(with(format!("\"{d}\"")), dir.join("steamcmd.exe"));                   // guillemets des deux côtés
+        assert_eq!(with(format!("\"{d}")), dir.join("steamcmd.exe"));                      // guillemet d'ouverture seul
+        assert_eq!(with(format!(" {}/steamcmd.exe ", d)), dir.join("steamcmd.exe"));        // fichier + espaces
+        std::fs::remove_dir_all(dir).ok();
+    }
 
     #[test]
     fn falls_back_to_default_when_ini_is_empty() {

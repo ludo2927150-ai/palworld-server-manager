@@ -19,10 +19,11 @@ fn chk(id: &'static str, label: &'static str, ok: bool, detail: impl Into<String
 pub fn diagnose_files(s: &AppSettings) -> Vec<Check> {
     let exe = s.exe_path();
     let ini_path = s.world_settings_path();
+    let steamcmd = s.steamcmd_exe();
     let mut v = vec![
         chk("exe", "PalServer.exe trouvé", exe.exists(), exe.display().to_string()),
-        chk("steamcmd", "SteamCMD trouvé (mises à jour)", s.steamcmd_path.exists() || s.steamcmd_path.components().count() == 1,
-            s.steamcmd_path.display().to_string()),
+        chk("steamcmd", "SteamCMD trouvé (mises à jour)", steamcmd.exists() || steamcmd.components().count() == 1,
+            steamcmd.display().to_string()),
     ];
     match s.load_world_options() {
         Err(e) => v.push(chk("ini", "PalWorldSettings.ini lisible", false, e.to_string())),
