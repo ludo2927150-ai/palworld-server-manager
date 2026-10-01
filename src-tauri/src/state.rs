@@ -31,11 +31,14 @@ impl AppState {
     pub fn load(app: &AppHandle) -> Result<Self, Box<dyn std::error::Error>> {
         let config_dir = app.path().app_config_dir()?;
         let settings_path = config_dir.join("settings.json");
+        crate::secrets::install();
         let history = HistoryStore::open(config_dir.join("history"), chrono::Utc::now().timestamp())?;
         Ok(Self {
             settings: RwLock::new({
                 let mut s = AppSettings::load(&settings_path)?;
                 s.resolve_backup_destination(&config_dir, &std::env::current_dir()?);
+                // Migration : un fichier en clair est réécrit avec les secrets déplacés dans le Gestionnaire d'identifiants.
+                let _ = s.save(&settings_path);
                 s
             }),
             settings_path,

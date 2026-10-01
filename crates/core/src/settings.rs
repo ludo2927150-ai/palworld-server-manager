@@ -315,14 +315,27 @@ impl AppSettings {
 
     pub fn load(path: &Path) -> Result<Self> {
         match std::fs::read_to_string(path) {
-            Ok(s) => Ok(serde_json::from_str(&s)?),
+            Ok(s) => {
+                let mut v: Self = serde_json::from_str(&s)?;
+                if let Some(store) = crate::secrets::global() { crate::secrets::reveal(store, &mut v); }
+                Ok(v)
+            }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Self::default()),
             Err(e) => Err(e.into()),
         }
     }
     pub fn save(&self, path: &Path) -> Result<()> {
         if let Some(p) = path.parent() { std::fs::create_dir_all(p)?; }
-        std::fs::write(path, serde_json::to_string_pretty(self)?)?;
+        let on_disk = match crate::secrets::global() {
+            Some(store) => {
+                if let Ok(prev) = std::fs::read_to_string(path).map_err(|_| ()).and_then(|j| serde_json::from_str::<Self>(&j).map_err(|_| ())) {
+                    crate::secrets::prune_guests(store, &prev, self);
+                }
+                crate::secrets::protect(store, self)
+            }
+            None => self.clone(),
+        };
+        std::fs::write(path, serde_json::to_string_pretty(&on_disk)?)?;
         Ok(())
     }
 }

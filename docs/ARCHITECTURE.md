@@ -46,7 +46,7 @@
 
 ## Sécurité
 
-- `admin_password` et webhooks sont stockés en clair dans `settings.json` (v0.1) ; migration vers le Credential Manager Windows prévue.
+- Secrets (mot de passe admin, webhooks, jeton mobile, jetons d'invités) : sur Windows ils sont déplacés dans le Gestionnaire d'identifiants (`core::secrets`, crate `keyring`) et remplacés par `@secret` dans `settings.json` ; migration automatique au premier lancement. Si le magasin est indisponible ou refuse l'écriture, la valeur reste en clair (jamais de perte). Les sauvegardes de `settings.json` ne contiennent donc plus les secrets : ils sont liés au compte Windows.
 - Restauration : chemin limité au dossier de backup, extraction protégée contre le zip-slip, ancien monde conservé en `SaveGames.bak`.
 - `write_world_settings` crée un `.ini.bak` avant écrasement.
 

@@ -2,6 +2,7 @@
 
 mod commands;
 mod remote;
+mod secrets;
 mod state;
 mod supervisor;
 mod tray;

@@ -18,6 +18,7 @@ pub mod players;
 pub mod remote;
 pub mod rest;
 pub mod schedule;
+pub mod secrets;
 pub mod server;
 pub mod settings;
 pub mod summary;
