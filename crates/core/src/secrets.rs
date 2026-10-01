@@ -47,6 +47,7 @@ pub fn protect(store: &dyn SecretStore, s: &AppSettings) -> AppSettings {
     let mut o = s.clone();
     protect_one(store, "rest.admin_password", &mut o.rest.admin_password);
     protect_one(store, "remote.token", &mut o.remote.token);
+    protect_one(store, "discord.bot_token", &mut o.discord_bot.bot_token);
     for g in &mut o.remote.guests { protect_one(store, &format!("guest.{}", g.id), &mut g.token); }
     for (k, f) in [("alerts.discord_webhook", &mut o.alerts.discord_webhook), ("alerts.ntfy_url", &mut o.alerts.ntfy_url)] {
         if let Some(v) = f { protect_one(store, k, v); }
@@ -58,6 +59,7 @@ pub fn protect(store: &dyn SecretStore, s: &AppSettings) -> AppSettings {
 pub fn reveal(store: &dyn SecretStore, s: &mut AppSettings) {
     reveal_one(store, "rest.admin_password", &mut s.rest.admin_password);
     reveal_one(store, "remote.token", &mut s.remote.token);
+    reveal_one(store, "discord.bot_token", &mut s.discord_bot.bot_token);
     for g in &mut s.remote.guests { reveal_one(store, &format!("guest.{}", g.id), &mut g.token); }
     for (k, f) in [("alerts.discord_webhook", &mut s.alerts.discord_webhook), ("alerts.ntfy_url", &mut s.alerts.ntfy_url)] {
         if let Some(v) = f { reveal_one(store, k, v); }

@@ -93,8 +93,30 @@ pub fn rotate(dest: &Path, keep: usize) -> Result<usize> {
     Ok(old.len())
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct VerifyReport { pub files: usize, pub bytes: u64 }
+
+/// Lit entièrement l'archive (ce qui contrôle les CRC) sans rien écrire. Refuse une archive vide, illisible
+/// ou contenant un chemin dangereux : on ne remplace jamais un monde sain par une archive douteuse.
+pub fn verify(archive: &Path) -> Result<VerifyReport> {
+    let mut zip = zip::ZipArchive::new(File::open(archive)?)?;
+    let (mut files, mut bytes) = (0usize, 0u64);
+    for i in 0..zip.len() {
+        let mut f = zip.by_index(i)?;
+        if f.enclosed_name().is_none() { return Err(crate::Error::Other(format!("chemin dangereux dans l'archive : {}", f.name()))); }
+        if f.is_dir() { continue; }
+        let n = std::io::copy(&mut f, &mut std::io::sink())
+            .map_err(|e| crate::Error::Other(format!("archive corrompue ({}) : {e}", f.name())))?;
+        files += 1;
+        bytes += n;
+    }
+    if files == 0 { return Err(crate::Error::Other("archive vide".into())); }
+    Ok(VerifyReport { files, bytes })
+}
+
 /// Restaure une archive dans `save_dir` (le serveur doit être arrêté). L'existant est déplacé en `SaveGames.bak`.
 pub fn restore(archive: &Path, save_dir: &Path) -> Result<()> {
+    verify(archive)?; // avant de toucher au monde existant
     let bak = save_dir.with_extension("bak");
     if bak.exists() { std::fs::remove_dir_all(&bak)?; }
     if save_dir.exists() { std::fs::rename(save_dir, &bak)?; }
@@ -113,6 +135,31 @@ pub fn restore(archive: &Path, save_dir: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn verify_accepts_good_and_rejects_bad_archives() {
+        let tmp = std::env::temp_dir().join(format!("pal-vf-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(tmp.join("SaveGames/0")).unwrap();
+        std::fs::write(tmp.join("SaveGames/0/Level.sav"), vec![7u8; 5000]).unwrap();
+        let info = create(&tmp.join("SaveGames"), &tmp.join("out")).unwrap();
+        let rep = verify(&info.path).unwrap();
+        assert_eq!((rep.files, rep.bytes), (1, 5000));
+        // tronquée
+        let mut data = std::fs::read(&info.path).unwrap();
+        data.truncate(data.len() / 2);
+        let bad = tmp.join("bad.zip");
+        std::fs::write(&bad, &data).unwrap();
+        assert!(verify(&bad).is_err());
+        // un restore refusé ne touche pas au monde existant
+        assert!(restore(&bad, &tmp.join("SaveGames")).is_err());
+        assert!(tmp.join("SaveGames/0/Level.sav").exists());
+        // vide
+        let empty = tmp.join("empty.zip");
+        zip::ZipWriter::new(File::create(&empty).unwrap()).finish().unwrap();
+        assert!(verify(&empty).is_err());
+        std::fs::remove_dir_all(tmp).ok();
+    }
 
     #[test]
     fn labeled_backup_all() {

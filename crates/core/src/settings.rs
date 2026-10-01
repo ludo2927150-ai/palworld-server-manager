@@ -16,6 +16,8 @@ pub struct AppSettings {
     pub performance: PerformanceSettings,
     pub announcements: AnnouncementSettings,
     pub access: AccessSettings,
+    pub server_update: ServerUpdateSettings,
+    pub discord_bot: DiscordBotSettings,
     pub remote: RemoteSettings,
     /// Chemin de `steamcmd.exe` (installation et mises à jour du serveur).
     pub steamcmd_path: PathBuf,
@@ -213,6 +215,10 @@ pub struct AlertSettings {
     pub daily_summary_time: Option<String>,
     /// Notification Windows (toast) pour les mêmes événements, en plus de Discord/ntfy.
     pub desktop: bool,
+    /// Alerte si aucune sauvegarde n'a réussi depuis ce nombre d'heures (serveur en marche) ; `None` = désactivé.
+    pub stale_backup_hours: Option<u32>,
+    /// Alerte si l'espace libre du disque de sauvegarde passe sous ce seuil (Go) ; `None` = désactivé.
+    pub min_free_disk_gb: Option<u32>,
 }
 
 impl Default for AppSettings {
@@ -227,6 +233,8 @@ impl Default for AppSettings {
             performance: PerformanceSettings::default(),
             announcements: AnnouncementSettings::default(),
             access: AccessSettings::default(),
+            server_update: ServerUpdateSettings::default(),
+            discord_bot: DiscordBotSettings::default(),
             remote: RemoteSettings::default(),
             steamcmd_path: PathBuf::from("steamcmd.exe"),
             auto_restart: true,
@@ -254,11 +262,38 @@ impl Default for ScheduleSettings {
         }
     }
 }
+/// Bot Discord (commandes slash). Connexion sortante uniquement ; seuls les identifiants Discord listés peuvent l'utiliser.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(default)]
+pub struct DiscordBotSettings {
+    pub enabled: bool,
+    /// Jeton du bot (stocké dans le Gestionnaire d'identifiants sous Windows).
+    pub bot_token: String,
+    /// Identifiants Discord (numériques) autorisés. Liste vide = personne.
+    pub allowed_user_ids: Vec<String>,
+    /// Autorise aussi démarrer / arrêter / redémarrer / sauvegarder / annoncer (sinon lecture seule).
+    pub allow_control: bool,
+}
+
+/// Mise à jour automatique du serveur Palworld (version Steam publique comparée à celle installée).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct ServerUpdateSettings {
+    pub enabled: bool,
+    pub check_every_minutes: u64,
+    /// Préavis donné aux joueurs avant l'arrêt (minutes). 0 = immédiat si le serveur est vide.
+    pub warn_minutes: u64,
+}
+impl Default for ServerUpdateSettings {
+    fn default() -> Self { Self { enabled: false, check_every_minutes: 60, warn_minutes: 5 } }
+}
+
 impl Default for AlertSettings {
     fn default() -> Self {
         Self {
             discord_webhook: None, ntfy_url: None, on_crash: true, on_player_join: true,
             on_player_leave: false, memory_threshold_percent: Some(90.0), cooldown_secs: 300, daily_summary_time: None, desktop: true,
+            stale_backup_hours: Some(6), min_free_disk_gb: Some(5),
         }
     }
 }
