@@ -17,5 +17,6 @@ walkdir = "2"
 chrono = { version = "0.4", features = ["serde"] }
 axum = { version = "0.7", default-features = false, features = ["tokio", "http1", "json", "query"] }
 getrandom = "0.2"
+portable-pty = "0.8"
 tokio-tungstenite = { version = "0.23", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
