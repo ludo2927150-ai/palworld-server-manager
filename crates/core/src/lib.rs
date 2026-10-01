@@ -3,6 +3,7 @@
 
 pub mod alerts;
 pub mod announce;
+pub mod audit;
 pub mod autostart;
 pub mod backup;
 pub mod discord;
@@ -22,7 +23,9 @@ pub mod playersaves;
 pub mod profiles;
 pub mod remote;
 pub mod rest;
+pub mod restoretest;
 pub mod schedule;
+pub mod season;
 pub mod secrets;
 pub mod server;
 pub mod settings;

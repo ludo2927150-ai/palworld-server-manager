@@ -16,6 +16,22 @@ pub fn render(template: &str, name: Option<&str>, online: usize, max: Option<u32
     clean(&out).trim().chars().take(MAX_LEN).collect()
 }
 
+/// Message d'accueil d'un joueur, par ordre de priorité : anniversaire ; message personnel ; retour après une longue absence ;
+/// sinon le message de bienvenue général. `last_seen` : dernière visite connue (avant celle-ci) ; `today_md` : date du jour `MM-JJ`.
+pub fn welcome_for(cfg: &AnnouncementSettings, user_id: &str, name: &str, last_seen: Option<i64>, now: i64, today_md: &str, online: usize, max: Option<u32>) -> Option<String> {
+    let personal = cfg.personal.iter().find(|p| p.user_id == user_id);
+    let tpl = if let Some(p) = personal.filter(|p| p.birthday.as_deref().is_some_and(|b| b.trim() == today_md)) {
+        Some(p.text.clone().filter(|t| !t.trim().is_empty()).unwrap_or_else(|| "Joyeux anniversaire {nom} !".into()))
+    } else if let Some(t) = personal.and_then(|p| p.text.clone()).filter(|t| !t.trim().is_empty()) {
+        Some(t)
+    } else if let (true, Some(seen), Some(t)) = (cfg.welcome_back_days > 0, last_seen, cfg.welcome_back_text.clone().filter(|t| !t.trim().is_empty())) {
+        let days = (now - seen) / 86_400;
+        (days >= cfg.welcome_back_days as i64).then(|| t.replace("{jours}", &days.to_string()))
+    } else { None };
+    let tpl = tpl.or_else(|| cfg.welcome.clone().filter(|t| !t.trim().is_empty()))?;
+    Some(render(&tpl, Some(name), online, max))
+}
+
 #[derive(Default)]
 pub struct Announcer {
     last: HashMap<String, i64>,
@@ -47,7 +63,7 @@ mod tests {
     use crate::settings::AnnouncementRule;
 
     fn rule(id: &str, text: &str, every: u32) -> AnnouncementRule { AnnouncementRule { id: id.into(), text: text.into(), every_minutes: every, enabled: true } }
-    fn cfg(rules: Vec<AnnouncementRule>) -> AnnouncementSettings { AnnouncementSettings { enabled: true, only_with_players: true, welcome: None, rules } }
+    fn cfg(rules: Vec<AnnouncementRule>) -> AnnouncementSettings { AnnouncementSettings { enabled: true, only_with_players: true, welcome: None, rules, ..Default::default() } }
 
     #[test]
     fn render_replaces_variables_and_cleans_untrusted_names() {
@@ -88,5 +104,25 @@ mod tests {
         let mut global_off = cfg(vec![rule("r1", "x", 1)]);
         global_off.enabled = false;
         assert!(a.due(&global_off, 10_000, 5, None).is_empty());
+    }
+
+    #[test]
+    fn personal_birthday_welcome_back_and_fallback() {
+        use crate::settings::PersonalMessage;
+        let cfg = AnnouncementSettings {
+            enabled: true, welcome: Some("Bienvenue {nom}".into()),
+            personal: vec![PersonalMessage { user_id: "steam_1".into(), name: "Alice".into(), text: Some("Salut la chef {nom}".into()), birthday: Some("10-01".into()) },
+                           PersonalMessage { user_id: "steam_2".into(), name: "Bob".into(), text: None, birthday: Some("03-15".into()) }],
+            welcome_back_days: 30, welcome_back_text: Some("Ça fait {jours} jours, {nom} !".into()), ..Default::default()
+        };
+        let day = 86_400;
+        let w = |id: &str, name: &str, seen: Option<i64>, md: &str| welcome_for(&cfg, id, name, seen, 100 * day, md, 2, Some(32));
+        assert_eq!(w("steam_1", "Alice", None, "10-01").unwrap(), "Salut la chef Alice"); // anniversaire avec texte perso
+        assert_eq!(w("steam_2", "Bob", None, "03-15").unwrap(), "Joyeux anniversaire Bob !"); // anniversaire sans texte
+        assert_eq!(w("steam_1", "Alice", None, "05-05").unwrap(), "Salut la chef Alice"); // texte perso
+        assert_eq!(w("steam_3", "Zed", Some(100 * day - 45 * day), "05-05").unwrap(), "Ça fait 45 jours, Zed !");
+        assert_eq!(w("steam_3", "Zed", Some(100 * day - 5 * day), "05-05").unwrap(), "Bienvenue Zed"); // absence courte : général
+        assert_eq!(w("steam_2", "Bob", None, "05-05").unwrap(), "Bienvenue Bob");
+        assert!(welcome_for(&AnnouncementSettings::default(), "x", "X", None, 0, "01-01", 1, None).is_none());
     }
 }

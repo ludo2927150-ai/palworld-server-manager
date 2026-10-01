@@ -13,7 +13,17 @@ pub struct BackupInfo {
     pub path: PathBuf,
     pub size_bytes: u64,
     pub created: DateTime<Local>,
+    /// Sauvegarde protégée (« gardée ») : jamais supprimée par la rotation.
+    pub protected: bool,
 }
+
+/// Une sauvegarde protégée porte `-garde` dans son nom.
+pub fn is_protected(file_name: &str) -> bool { file_name.contains("-garde") }
+
+static LAST_MIRROR_ERROR: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+/// Dernière erreur de copie miroir (lue une seule fois par le superviseur pour alerter).
+pub fn take_mirror_error() -> Option<String> { LAST_MIRROR_ERROR.lock().ok().and_then(|mut g| g.take()) }
 
 /// Crée `palworld-YYYYmmdd-HHMMSS.zip` dans `dest`. À appeler après un `save` REST pour un état cohérent.
 pub fn create(save_dir: &Path, dest: &Path) -> Result<BackupInfo> { create_labeled(save_dir, dest, None) }
@@ -43,8 +53,10 @@ pub fn create_labeled(save_dir: &Path, dest: &Path, label: Option<&str>) -> Resu
 
 fn info_for(path: &Path) -> Result<BackupInfo> {
     let md = std::fs::metadata(path)?;
+    let file_name: String = path.file_name().map(|n| n.to_string_lossy().into()).unwrap_or_default();
     Ok(BackupInfo {
-        file_name: path.file_name().map(|n| n.to_string_lossy().into()).unwrap_or_default(),
+        protected: is_protected(&file_name),
+        file_name,
         path: path.to_path_buf(),
         size_bytes: md.len(),
         created: md.modified()?.into(),
@@ -70,7 +82,10 @@ pub fn backup_all(s: &AppSettings, label: Option<&str>) -> Result<BackupInfo> {
         if n > 0 { eprintln!("{n} sauvegarde(s) joueur créée(s)"); }
     }
     if let Some(m) = &s.backup.mirror_destination {
-        if let Err(e) = mirror(&info.path, m, &s.backup) { eprintln!("copie miroir impossible : {e}"); }
+        if let Err(e) = mirror(&info.path, m, &s.backup) {
+            eprintln!("copie miroir impossible : {e}");
+            if let Ok(mut g) = LAST_MIRROR_ERROR.lock() { *g = Some(format!("copie vers {} impossible : {e}", m.display())); }
+        }
     }
     Ok(info)
 }
@@ -102,7 +117,7 @@ pub fn plan_tiered(backups: &[BackupInfo], now: DateTime<Local>) -> Vec<bool> {
 /// Rotation selon la politique choisie : par paliers, ou simplement les `retention` plus récentes.
 pub fn rotate_policy(dest: &Path, cfg: &crate::settings::BackupSettings) -> Result<usize> {
     if !cfg.tiered { return rotate(dest, cfg.retention); }
-    let all = list(dest)?;
+    let all: Vec<BackupInfo> = list(dest)?.into_iter().filter(|b| !b.protected).collect(); // les sauvegardes protégées ne comptent pas
     let keep = plan_tiered(&all, Local::now());
     let mut n = 0;
     for (b, k) in all.iter().zip(keep) { if !k { std::fs::remove_file(&b.path)?; n += 1; } }
@@ -122,9 +137,21 @@ pub fn list(dest: &Path) -> Result<Vec<BackupInfo>> {
     Ok(v)
 }
 
+/// Protège (ou déprotège) une sauvegarde en renommant le fichier ; renvoie son nouveau chemin.
+pub fn set_protected(path: &Path, on: bool) -> Result<PathBuf> {
+    let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    if !name.ends_with(".zip") { return Err(crate::Error::Other("ce n'est pas une sauvegarde".into())); }
+    let new = if on && !is_protected(&name) { name.trim_end_matches(".zip").to_string() + "-garde.zip" }
+        else if !on && is_protected(&name) { name.replacen("-garde", "", 1) } else { return Ok(path.to_path_buf()) };
+    let target = path.with_file_name(new);
+    if target.exists() { return Err(crate::Error::Other("une sauvegarde de ce nom existe déjà".into())); }
+    std::fs::rename(path, &target)?;
+    Ok(target)
+}
+
 /// Ne garde que les `keep` plus récentes ; renvoie le nombre supprimé.
 pub fn rotate(dest: &Path, keep: usize) -> Result<usize> {
-    let old: Vec<_> = list(dest)?.into_iter().skip(keep.max(1)).collect();
+    let old: Vec<_> = list(dest)?.into_iter().filter(|b| !b.protected).skip(keep.max(1)).collect();
     for b in &old { std::fs::remove_file(&b.path)?; }
     Ok(old.len())
 }
@@ -156,12 +183,18 @@ pub fn restore(archive: &Path, save_dir: &Path) -> Result<()> {
     let bak = save_dir.with_extension("bak");
     if bak.exists() { std::fs::remove_dir_all(&bak)?; }
     if save_dir.exists() { std::fs::rename(save_dir, &bak)?; }
-    std::fs::create_dir_all(save_dir)?;
+    restore_into(archive, save_dir)
+}
+
+/// Extrait l'archive dans `dir` (créé au besoin) sans toucher à rien d'autre ; chemins dangereux ignorés (anti zip-slip).
+pub fn restore_into(archive: &Path, dir: &Path) -> Result<()> {
+    std::fs::create_dir_all(dir)?;
     let mut zip = zip::ZipArchive::new(File::open(archive)?)?;
     for i in 0..zip.len() {
         let mut f = zip.by_index(i)?;
-        let Some(rel) = f.enclosed_name().map(|p| p.to_path_buf()) else { continue }; // anti zip-slip
-        let out = save_dir.join(rel);
+        let Some(rel) = f.enclosed_name().map(|p| p.to_path_buf()) else { continue };
+        if f.is_dir() { continue; }
+        let out = dir.join(rel);
         if let Some(p) = out.parent() { std::fs::create_dir_all(p)?; }
         std::io::copy(&mut f, &mut File::create(out)?)?;
     }
@@ -173,7 +206,27 @@ mod tests {
     use super::*;
 
     fn fake(age_h: i64) -> BackupInfo {
-        BackupInfo { file_name: format!("b{age_h}.zip"), path: format!("b{age_h}.zip").into(), size_bytes: 1, created: Local::now() - chrono::Duration::hours(age_h) }
+        BackupInfo { file_name: format!("b{age_h}.zip"), path: format!("b{age_h}.zip").into(), size_bytes: 1, created: Local::now() - chrono::Duration::hours(age_h), protected: false }
+    }
+
+    #[test]
+    fn protected_backups_survive_rotation_and_can_be_toggled() {
+        let tmp = std::env::temp_dir().join(format!("pal-prot-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        for (i, n) in ["palworld-20260101-000001.zip", "palworld-20260101-000002-garde-boss.zip", "palworld-20260101-000003.zip", "palworld-20260101-000004.zip"].iter().enumerate() {
+            std::fs::write(tmp.join(n), b"x").unwrap();
+            let t = std::time::SystemTime::now() - std::time::Duration::from_secs(1000 - i as u64 * 100);
+            std::fs::File::options().write(true).open(tmp.join(n)).unwrap().set_modified(t).unwrap();
+        }
+        assert_eq!(rotate(&tmp, 1).unwrap(), 2); // garde 1 non protégée (la plus récente) ; la protégée reste
+        let left: Vec<String> = list(&tmp).unwrap().into_iter().map(|b| b.file_name).collect();
+        assert!(left.contains(&"palworld-20260101-000002-garde-boss.zip".to_string()) && left.len() == 2, "{left:?}");
+        let p = set_protected(&tmp.join("palworld-20260101-000004.zip"), true).unwrap();
+        assert!(p.to_string_lossy().ends_with("000004-garde.zip") && list(&tmp).unwrap().iter().filter(|b| b.protected).count() == 2);
+        let back = set_protected(&p, false).unwrap();
+        assert!(back.ends_with("palworld-20260101-000004.zip"));
+        std::fs::remove_dir_all(tmp).ok();
     }
 
     #[test]

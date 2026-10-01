@@ -21,6 +21,7 @@ pub struct AppSettings {
     pub watchdog: WatchdogSettings,
     pub mod_automation: ModAutomation,
     pub upnp: UpnpSettings,
+    pub lock: LockSettings,
     pub remote: RemoteSettings,
     /// Chemin de `steamcmd.exe` (installation et mises à jour du serveur).
     pub steamcmd_path: PathBuf,
@@ -64,6 +65,8 @@ pub struct BackupSettings {
     pub player_snapshots: bool,
     /// Nombre de versions gardées par joueur.
     pub player_keep: usize,
+    /// Test de restauration automatique tous les N jours (`None` = désactivé).
+    pub restore_test_days: Option<u32>,
 }
 
 /// Priorité CPU du processus serveur (la priorité « temps réel » est volontairement absente : elle peut figer Windows).
@@ -116,6 +119,9 @@ pub struct ScheduleSettings {
     /// Pour les redémarrages déclenchés par la mémoire : attendre que le serveur soit vide, au plus ce nombre de minutes (0 = ne pas attendre).
     #[serde(default)]
     pub memory_restart_wait_empty_minutes: u64,
+    /// Calendrier de saisons : profil appliqué pendant une période, puis retour automatique.
+    #[serde(default)]
+    pub events: Vec<crate::season::SeasonEvent>,
 }
 
 /// Annonces en jeu : message de bienvenue et rappels réguliers. Variables : `{nom}` (bienvenue), `{joueurs}`, `{max}`.
@@ -127,10 +133,31 @@ pub struct AnnouncementSettings {
     pub only_with_players: bool,
     pub welcome: Option<String>,
     pub rules: Vec<AnnouncementRule>,
+    /// Messages réservés à un joueur (remplacent le message de bienvenue général) : texte à chaque connexion et/ou anniversaire.
+    #[serde(default)]
+    pub personal: Vec<PersonalMessage>,
+    /// Message de retour après une longue absence (`{nom}`, `{jours}`) ; 0 jour = désactivé.
+    #[serde(default)]
+    pub welcome_back_days: u32,
+    #[serde(default)]
+    pub welcome_back_text: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PersonalMessage {
+    pub user_id: String,
+    #[serde(default)]
+    pub name: String,
+    /// Dit à chaque connexion de ce joueur (facultatif).
+    #[serde(default)]
+    pub text: Option<String>,
+    /// Date d'anniversaire `MM-JJ` (facultatif) : message spécial ce jour-là.
+    #[serde(default)]
+    pub birthday: Option<String>,
 }
 
 impl Default for AnnouncementSettings {
-    fn default() -> Self { Self { enabled: false, only_with_players: true, welcome: None, rules: Vec::new() } }
+    fn default() -> Self { Self { enabled: false, only_with_players: true, welcome: None, rules: Vec::new(), personal: Vec::new(), welcome_back_days: 0, welcome_back_text: None } }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -239,6 +266,8 @@ pub struct AlertSettings {
     pub stale_backup_hours: Option<u32>,
     /// Alerte si l'espace libre du disque de sauvegarde passe sous ce seuil (Go) ; `None` = désactivé.
     pub min_free_disk_gb: Option<u32>,
+    /// Jour d'envoi du rapport hebdomadaire (0 = lundi … 6 = dimanche) à l'heure du résumé quotidien (20:00 par défaut) ; `None` = désactivé.
+    pub weekly_report_day: Option<u8>,
 }
 
 impl Default for AppSettings {
@@ -258,6 +287,7 @@ impl Default for AppSettings {
             watchdog: WatchdogSettings::default(),
             mod_automation: ModAutomation { check_every_minutes: 120, ..Default::default() },
             upnp: UpnpSettings::default(),
+            lock: LockSettings::default(),
             remote: RemoteSettings::default(),
             steamcmd_path: PathBuf::from("steamcmd.exe"),
             auto_restart: true,
@@ -274,7 +304,7 @@ impl Default for RestSettings {
 }
 impl Default for BackupSettings {
     fn default() -> Self {
-        Self { enabled: true, interval_minutes: 30, retention: 10, destination: PathBuf::from("backups"), mirror_destination: None, on_stop: true, tiered: false, player_snapshots: true, player_keep: 10 }
+        Self { enabled: true, interval_minutes: 30, retention: 10, destination: PathBuf::from("backups"), mirror_destination: None, on_stop: true, tiered: false, player_snapshots: true, player_keep: 10, restore_test_days: Some(7) }
     }
 }
 impl Default for ScheduleSettings {
@@ -285,6 +315,7 @@ impl Default for ScheduleSettings {
             announce_minutes: vec![15, 5, 1],
             memory_restart_percent: None,
             memory_restart_wait_empty_minutes: 0,
+            events: Vec::new(),
         }
     }
 }
@@ -335,6 +366,18 @@ pub struct ModPack { pub name: String, pub package_names: Vec<String> }
 #[serde(default)]
 pub struct UpnpSettings { pub enabled: bool }
 
+/// Verrou d'affichage : demande un code pour utiliser l'application. Ce n'est PAS une protection contre quelqu'un qui a accès
+/// à vos fichiers ou à votre session Windows : c'est un garde-fou contre l'usage involontaire ou curieux.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(default)]
+pub struct LockSettings {
+    pub enabled: bool,
+    pub salt: String,
+    pub hash: String,
+    /// Reverrouille après ce nombre de minutes d'inactivité (0 = jamais).
+    pub auto_lock_minutes: u32,
+}
+
 /// Mise à jour automatique du serveur Palworld (version Steam publique comparée à celle installée).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
@@ -353,7 +396,7 @@ impl Default for AlertSettings {
         Self {
             discord_webhook: None, ntfy_url: None, on_crash: true, on_player_join: true,
             on_player_leave: false, memory_threshold_percent: Some(90.0), cooldown_secs: 300, daily_summary_time: None, desktop: true,
-            stale_backup_hours: Some(6), min_free_disk_gb: Some(5),
+            stale_backup_hours: Some(6), min_free_disk_gb: Some(5), weekly_report_day: None,
         }
     }
 }
@@ -473,6 +516,12 @@ impl AppSettings {
         self.mod_automation.managed_ids.dedup();
         self.discord_bot.allowed_user_ids.retain(|i| !i.is_empty() && i.chars().all(|c| c.is_ascii_digit()));
         self.discord_bot.allowed_user_ids.dedup();
+        self.lock.auto_lock_minutes = self.lock.auto_lock_minutes.min(24 * 60);
+        self.alerts.weekly_report_day = self.alerts.weekly_report_day.filter(|d| *d < 7);
+        self.backup.restore_test_days = self.backup.restore_test_days.map(|d| d.clamp(1, 90));
+        self.schedule.events.retain(|e| !e.name.trim().is_empty() && !e.profile.trim().is_empty());
+        self.schedule.events.truncate(50);
+        self.announcements.personal.retain(|p| !p.user_id.trim().is_empty());
         for r in &mut self.schedule.rules { r.days.retain(|d| *d < 7); r.days.sort_unstable(); r.days.dedup(); }
     }
 
@@ -484,6 +533,7 @@ impl AppSettings {
         self.mod_automation.managed_ids = current.mod_automation.managed_ids.clone();
         self.mod_automation.packs = current.mod_automation.packs.clone();
         self.setup_done |= current.setup_done;
+        self.lock = current.lock.clone(); // modifié uniquement par les commandes dédiées (le code ne transite jamais par les réglages)
     }
 }
 

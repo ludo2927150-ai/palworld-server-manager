@@ -59,7 +59,7 @@ mod tests {
     use chrono::{Duration, Local};
 
     fn bk(age_h: i64) -> BackupInfo {
-        BackupInfo { file_name: "x.zip".into(), path: "x.zip".into(), size_bytes: 1, created: Local::now() - Duration::hours(age_h) }
+        BackupInfo { file_name: "x.zip".into(), path: "x.zip".into(), size_bytes: 1, created: Local::now() - Duration::hours(age_h), protected: false }
     }
 
     #[test]

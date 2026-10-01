@@ -31,6 +31,25 @@ impl DailyTrigger {
     }
 }
 
+/// Déclencheur hebdomadaire (rapport) : une seule fois par semaine ISO, dès que le jour et l'heure choisis sont passés
+/// (rattrape l'envoi si l'application était fermée à l'heure prévue, jusqu'à la fin de la semaine).
+#[derive(Default)]
+pub struct WeeklyTrigger { last: Option<(i32, u32)> }
+
+impl WeeklyTrigger {
+    pub fn new() -> Self { Self::default() }
+    pub fn due(&mut self, day: Option<u8>, time: Option<&str>, now: NaiveDateTime) -> bool {
+        use chrono::Datelike;
+        let Some(day) = day.filter(|d| *d < 7) else { return false };
+        let t = time.and_then(|t| NaiveTime::parse_from_str(t.trim(), "%H:%M").ok()).unwrap_or_else(|| NaiveTime::from_hms_opt(20, 0, 0).unwrap());
+        let week = (now.iso_week().year(), now.iso_week().week());
+        let wd = now.weekday().num_days_from_monday() as u8;
+        let past = wd > day || (wd == day && now.time() >= t);
+        if past && self.last != Some(week) { self.last = Some(week); return true; }
+        false
+    }
+}
+
 #[derive(Default)]
 pub struct Scheduler {
     /// (échéance, palier d'annonce — 0 = exécution, index de la règle)
@@ -79,7 +98,7 @@ mod tests {
     // 2026-01-01 est un jeudi (days: 3).
     fn at(h: u32, m: u32, s: u32) -> NaiveDateTime { NaiveDate::from_ymd_opt(2026, 1, 1).unwrap().and_hms_opt(h, m, s).unwrap() }
     fn rule(time: &str, action: RuleAction, days: &[u8]) -> ScheduleRule { ScheduleRule { time: time.into(), action, days: days.to_vec(), profile: None } }
-    fn cfg(rules: Vec<ScheduleRule>) -> ScheduleSettings { ScheduleSettings { enabled: true, rules, announce_minutes: vec![15, 5, 1], memory_restart_percent: None, memory_restart_wait_empty_minutes: 0 } }
+    fn cfg(rules: Vec<ScheduleRule>) -> ScheduleSettings { ScheduleSettings { enabled: true, rules, announce_minutes: vec![15, 5, 1], memory_restart_percent: None, memory_restart_wait_empty_minutes: 0, events: vec![] } }
     use RuleAction::*;
 
     #[test]
@@ -155,5 +174,21 @@ mod tests {
         r.profile = Some("Week-end".into());
         let out = Scheduler::new().tick(&cfg(vec![r]), at(18, 0, 0));
         assert_eq!(out, vec![Action::Run { action: Restart, profile: Some("Week-end".into()) }]);
+    }
+
+    #[test]
+    fn weekly_trigger_once_per_week_with_catch_up() {
+        let mut w = WeeklyTrigger::new();
+        // 2026-01-01 = jeudi (3) ; rapport le dimanche (6) à 20:00
+        assert!(!w.due(Some(6), Some("20:00"), at(12, 0, 0)));
+        let sunday = chrono::NaiveDate::from_ymd_opt(2026, 1, 4).unwrap();
+        assert!(!w.due(Some(6), Some("20:00"), sunday.and_hms_opt(19, 59, 0).unwrap()));
+        assert!(w.due(Some(6), Some("20:00"), sunday.and_hms_opt(20, 0, 0).unwrap()));
+        assert!(!w.due(Some(6), Some("20:00"), sunday.and_hms_opt(21, 0, 0).unwrap()), "une seule fois");
+        // semaine suivante, application ouverte seulement le mardi : rattrapage
+        let mut w2 = WeeklyTrigger::new();
+        let tuesday = chrono::NaiveDate::from_ymd_opt(2026, 1, 6).unwrap();
+        assert!(w2.due(Some(0), None, tuesday.and_hms_opt(9, 0, 0).unwrap()));
+        assert!(!w2.due(None, None, tuesday.and_hms_opt(9, 0, 0).unwrap()));
     }
 }
