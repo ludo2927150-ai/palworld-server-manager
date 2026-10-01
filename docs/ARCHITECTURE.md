@@ -83,3 +83,10 @@
 - **Sauvegardes** : rétention par paliers (`backup::plan_tiered`) en option ; chaque archive est relue (`verify`) juste après création, supprimée et signalée si défectueuse.
 - **Installation depuis zéro** (`core/install.rs`) : seule adresse téléchargée = steamcmd.zip officiel de Valve.
 - **UPnP** (`core/upnp.rs`) : ouvre uniquement le port UDP de jeu, désactivé par défaut, bail d'1 h renouvelé toutes les 20 min tant que le serveur tourne.
+
+## Détails et sauvegardes par joueur (core/players.rs, core/playersaves.rs)
+
+- **Fiche joueur** : en plus du temps de jeu et des pseudos, le carnet garde le niveau (avec historique), la dernière position, le nombre de constructions et l'identifiant de joueur du jeu (`playerId`, nom des fichiers `Players/<id>.sav`). Source : l'API REST. L'adresse IP des joueurs n'est volontairement ni lue ni conservée.
+- **Sauvegardes individuelles** : à chaque sauvegarde du monde, les fichiers `Players/<id>.sav` et `<id>_dps.sav` de chaque joueur sont zippés dans `<destination>/joueurs/<ID>/` (dédoublonnés par empreinte, N versions gardées).
+- **Limite structurelle** : le fichier joueur ne contient que sa fiche ; objets, Pals et bases sont dans `Level.sav`. Restaurer un fichier joueur ne les ramène pas, et le transférer vers un autre monde est impossible sans réécrire `Level.sav` (format propriétaire, compression Oodle selon les versions) : non implémenté volontairement, pour ne jamais corrompre un monde.
+- **Restauration** : même monde uniquement, serveur arrêté (avec sauvegarde du monde), ancien fichier conservé en `.avant-restauration`, noms d'entrées d'archive strictement validés.

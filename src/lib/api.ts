@@ -1,5 +1,5 @@
 // Pont IPC. Hors Tauri (npm run dev dans un navigateur) on bascule sur des données factices.
-import type { AppSettings, BackupInfo, Check, BanEntry, VerifyReport, ProfileInfo, ServerUpdateInfo, UpdateInfo, KnownPlayer, Finding, Guest, ModsState, LogChunk, Opt, Perm, RemoteInfo, Sample, Session, Snapshot, SystemInfo, WorldSettings } from "./types";
+import type { AppSettings, BackupInfo, Check, BanEntry, VerifyReport, ProfileInfo, ServerUpdateInfo, UpdateInfo, KnownPlayer, PlayerSnapshot, Finding, Guest, ModsState, LogChunk, Opt, Perm, RemoteInfo, Sample, Session, Snapshot, SystemInfo, WorldSettings } from "./types";
 import { mock } from "./mock";
 
 export const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -62,6 +62,10 @@ export const api = {
   modPackDelete: (name: string) => call<void>("mod_pack_delete", { name }),
   installEverything: (baseDir: string) => call<void>("install_everything", { baseDir }),
   upnpTest: () => call<string>("upnp_test"),
+  playerSnapshots: (playerId: string) => call<PlayerSnapshot[]>("player_snapshots", { playerId }),
+  playerSnapshotNow: (playerId: string) => call<PlayerSnapshot | null>("player_snapshot_now", { playerId }),
+  playerRestore: (path: string) => call<string[]>("player_restore", { path }),
+  playerExport: (path: string, targetDir?: string) => call<string>("player_export", { path, targetDir: targetDir ?? null }),
   diagnose: () => call<Check[]>("diagnose"),
   fixRest: (adminPassword: string) => call<void>("fix_rest", { adminPassword }),
   getAutostart: () => call<boolean>("get_autostart"),

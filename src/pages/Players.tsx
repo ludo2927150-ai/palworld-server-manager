@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { t } from "../lib/i18n";
 import type { AppSettings, BanEntry, KnownPlayer, Snapshot } from "../lib/types";
+import PlayerDetail from "../components/PlayerDetail";
 
 const TABS = ["En ligne", "Historique", "Bannis", "Liste blanche"] as const;
 type Tab = (typeof TABS)[number];
@@ -18,6 +19,8 @@ export default function Players({ snap, notify }: { snap: Snapshot | null; notif
   const [unbanId, setUnbanId] = useState("");
   const [newId, setNewId] = useState("");
   const [q, setQ] = useState("");
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const detail = known.find((k) => k.user_id === detailId) ?? null;
 
   const reload = useCallback(() => {
     api.playersKnown().then(setKnown).catch(() => {});
@@ -72,6 +75,7 @@ export default function Players({ snap, notify }: { snap: Snapshot | null; notif
         </>
       )}
 
+      {tab === "Historique" && detail && <PlayerDetail key={detail.user_id} p={detail} notify={notify} onClose={() => setDetailId(null)} />}
       {tab === "Historique" && (
         <div className="card space-y-3">
           <div className="flex items-center gap-3">
@@ -93,6 +97,7 @@ export default function Players({ snap, notify }: { snap: Snapshot | null; notif
                       </td>
                       <td>{p.online ? "maintenant" : when(p.last_seen)}</td><td>{dur(p.total_secs)}</td><td>{p.sessions}</td><td>{when(p.first_seen)}</td>
                       <td className="space-x-2 text-right">
+                        <button className="btn" onClick={() => setDetailId(p.user_id)}>Détails</button>
                         {!p.allowed && <button className="btn" onClick={() => allow(p.user_id, p.name)}>{t("Autoriser")}</button>}
                         {p.banned
                           ? <button className="btn" onClick={() => run(() => api.unban(p.user_id), `${p.name} débanni`)}>{t("Débannir")}</button>

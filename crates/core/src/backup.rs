@@ -64,6 +64,11 @@ pub fn backup_all(s: &AppSettings, label: Option<&str>) -> Result<BackupInfo> {
         return Err(crate::Error::Other(format!("sauvegarde {} défectueuse, supprimée : {e}", info.file_name)));
     }
     rotate_policy(&s.backup.destination, &s.backup)?;
+    if s.backup.player_snapshots {
+        // Au mieux : un échec ici ne doit jamais faire échouer la sauvegarde du monde.
+        let n = crate::playersaves::snapshot_all(&s.save_dir(), &s.backup.destination, s.backup.player_keep);
+        if n > 0 { eprintln!("{n} sauvegarde(s) joueur créée(s)"); }
+    }
     if let Some(m) = &s.backup.mirror_destination {
         if let Err(e) = mirror(&info.path, m, &s.backup) { eprintln!("copie miroir impossible : {e}"); }
     }

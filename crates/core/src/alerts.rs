@@ -89,7 +89,7 @@ mod tests {
     use crate::rest::Player;
 
     fn snap(running: bool, players: &[&str]) -> Snapshot {
-        Snapshot { running, players: players.iter().map(|n| Player { name: n.to_string(), account_name: String::new(), player_id: String::new(), user_id: String::new(), level: 1, ping: 0.0 }).collect(), ..Default::default() }
+        Snapshot { running, players: players.iter().map(|n| Player { name: n.to_string(), account_name: String::new(), player_id: String::new(), user_id: String::new(), level: 1, ping: 0.0, ..Default::default() }).collect(), ..Default::default() }
     }
 
     #[test]

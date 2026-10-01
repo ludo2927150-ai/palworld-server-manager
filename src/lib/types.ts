@@ -1,5 +1,5 @@
 // Miroir des structs Rust (crates/core). Garder synchronisé.
-export interface Player { name: string; accountName: string; playerId: string; userId: string; level: number; ping: number }
+export interface Player { name: string; accountName: string; playerId: string; userId: string; level: number; ping: number; location_x?: number; location_y?: number; building_count?: number }
 export interface Metrics { currentplayernum: number; maxplayernum: number; serverfps: number; days: number; uptime: number }
 export interface Snapshot {
   running: boolean; cpu_percent: number; memory_bytes: number; memory_percent: number;
@@ -16,7 +16,7 @@ export interface AppSettings {
   schedule: { enabled: boolean; rules: ScheduleRule[]; announce_minutes: number[]; memory_restart_percent: number | null; memory_restart_wait_empty_minutes: number };
   launch_args: string[]; auto_restart: boolean; close_to_tray: boolean; start_server_on_launch: boolean; setup_done: boolean; log_file: string | null; capture_console: boolean;
   rest: { host: string; port: number; admin_password: string };
-  backup: { enabled: boolean; interval_minutes: number; retention: number; destination: string; mirror_destination: string | null; on_stop: boolean; tiered: boolean };
+  backup: { enabled: boolean; interval_minutes: number; retention: number; destination: string; mirror_destination: string | null; on_stop: boolean; tiered: boolean; player_snapshots: boolean; player_keep: number };
   alerts: {
     discord_webhook: string | null; ntfy_url: string | null; on_crash: boolean; on_player_join: boolean;
     on_player_leave: boolean; memory_threshold_percent: number | null; cooldown_secs: number;
@@ -58,8 +58,10 @@ export interface AllowedPlayer { user_id: string; name: string }
 export interface AccessSettings { whitelist_enabled: boolean; allowed: AllowedPlayer[]; kick_message: string }
 export interface KnownPlayer {
   user_id: string; name: string; previous_names: string[]; first_seen: number; last_seen: number; sessions: number; total_secs: number;
+  player_id: string; level: number; max_level: number; location: [number, number] | null; buildings: number; level_history: [number, number][];
   online: boolean; banned: boolean; allowed: boolean;
 }
+export interface PlayerSnapshot { file_name: string; path: string; taken: string; size_bytes: number }
 export interface BanEntry { user_id: string; name: string; banned_at: number; reason: string | null }
 export interface UpdateInfo { current: string; latest: string; notes: string; url: string; asset: string }
 export interface VerifyReport { files: number; bytes: number }

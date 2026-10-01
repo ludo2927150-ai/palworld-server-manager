@@ -611,3 +611,63 @@ pub async fn upnp_test(st: S<'_>) -> Result<String> {
     let public = palmanager_core::upnp::open(port, ip).await?;
     Ok(format!("Port UDP {port} ouvert vers {ip}. Adresse publique vue par la box : {public}"))
 }
+
+/// Sauvegardes individuelles d'un joueur (la plus récente d'abord).
+#[tauri::command]
+pub async fn player_snapshots(st: S<'_>, player_id: String) -> Result<Vec<palmanager_core::playersaves::PlayerSnapshot>> {
+    let dest = st.settings.read().await.backup.destination.clone();
+    Ok(palmanager_core::playersaves::list(&dest, &player_id))
+}
+
+/// Sauvegarde maintenant les fichiers du joueur (après avoir demandé au serveur d'écrire le monde sur disque).
+#[tauri::command]
+pub async fn player_snapshot_now(st: S<'_>, player_id: String) -> Result<Option<palmanager_core::playersaves::PlayerSnapshot>> {
+    let s = st.settings.read().await.clone();
+    if let Ok(api) = RestClient::new(&s.rest) { let _ = api.save().await; }
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    tokio::task::spawn_blocking(move || palmanager_core::playersaves::snapshot_player(&s.save_dir(), &s.backup.destination, &player_id, s.backup.player_keep))
+        .await.map_err(|e| Error::Other(e.to_string()))?
+}
+
+/// Restaure la fiche d'un joueur (même monde). Le serveur est arrêté (avec sauvegarde du monde), les fichiers sont remplacés,
+/// puis le serveur est relancé s'il tournait. Les objets, Pals et bases du joueur ne sont PAS concernés (voir `playersaves`).
+#[tauri::command]
+pub async fn player_restore(st: S<'_>, path: String) -> Result<Vec<String>> {
+    let s = st.settings.read().await.clone();
+    let root = s.backup.destination.join("joueurs").canonicalize()?;
+    let p = std::path::PathBuf::from(&path).canonicalize()?;
+    if !p.starts_with(&root) { return Err(Error::Other("archive hors du dossier des sauvegardes joueur".into())); }
+    if st.maintenance.swap(true, Ordering::SeqCst) { return Err(Error::Other("une maintenance est déjà en cours".into())); }
+    let was_running = st.server.is_running().await;
+    let res: Result<Vec<String>> = async {
+        if was_running {
+            st.expected_stop.store(true, Ordering::SeqCst);
+            st.server.stop(&s, Duration::from_secs(60)).await?; // sauvegarde du monde si backup.on_stop
+        }
+        let dir = s.save_dir();
+        tokio::task::spawn_blocking(move || palmanager_core::playersaves::restore_player(&p, &dir)).await.map_err(|e| Error::Other(e.to_string()))?
+    }.await;
+    if was_running {
+        st.expected_stop.store(false, Ordering::SeqCst);
+        let _ = st.server.start(&s).await;
+    }
+    st.maintenance.store(false, Ordering::SeqCst);
+    res
+}
+
+/// Copie une sauvegarde joueur (zip) vers un dossier choisi (par défaut le Bureau) ; renvoie le fichier créé.
+#[tauri::command]
+pub async fn player_export(st: S<'_>, path: String, target_dir: Option<String>) -> Result<String> {
+    let s = st.settings.read().await.clone();
+    let root = s.backup.destination.join("joueurs").canonicalize()?;
+    let p = std::path::PathBuf::from(&path).canonicalize()?;
+    if !p.starts_with(&root) { return Err(Error::Other("archive hors du dossier des sauvegardes joueur".into())); }
+    let dir = target_dir.filter(|d| !d.trim().is_empty()).map(|d| std::path::PathBuf::from(d.trim().trim_matches('"')))
+        .or_else(|| std::env::var_os("USERPROFILE").map(|h| std::path::PathBuf::from(h).join("Desktop")))
+        .ok_or_else(|| Error::Other("indiquez un dossier de destination".into()))?;
+    std::fs::create_dir_all(&dir)?;
+    let id = p.parent().and_then(|d| d.file_name()).map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    let out = dir.join(format!("joueur-{id}-{}", p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()));
+    std::fs::copy(&p, &out)?;
+    Ok(out.display().to_string())
+}

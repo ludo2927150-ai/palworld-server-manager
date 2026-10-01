@@ -238,7 +238,7 @@ pub fn spawn(app: AppHandle) {
             // Carnet des joueurs (temps de jeu, sessions) et liste blanche : uniquement quand l'API a répondu,
             // pour ne jamais agir sur une liste de joueurs incertaine.
             if snap.running && snap.metrics.is_some() {
-                let current: Vec<(String, String)> = snap.players.iter().map(|p| (p.user_id.clone(), p.name.clone())).collect();
+                let current: Vec<players::Seen> = snap.players.iter().map(players::Seen::from_rest).collect();
                 let mut book = st.players.lock().await;
                 book.observe(ts, &current);
                 if ts - last_book_save >= 60 { let _ = book.save_if_dirty(); last_book_save = ts; }

@@ -60,6 +60,10 @@ pub struct BackupSettings {
     /// Rétention par paliers : tout ce qui a moins de 24 h, puis une par jour pendant 7 jours, puis une par semaine pendant 4 semaines.
     #[serde(default)]
     pub tiered: bool,
+    /// Sauvegarde aussi, à chaque sauvegarde du monde, les fichiers de chaque joueur (dossier `joueurs` de la destination).
+    pub player_snapshots: bool,
+    /// Nombre de versions gardées par joueur.
+    pub player_keep: usize,
 }
 
 /// Priorité CPU du processus serveur (la priorité « temps réel » est volontairement absente : elle peut figer Windows).
@@ -270,7 +274,7 @@ impl Default for RestSettings {
 }
 impl Default for BackupSettings {
     fn default() -> Self {
-        Self { enabled: true, interval_minutes: 30, retention: 10, destination: PathBuf::from("backups"), mirror_destination: None, on_stop: true, tiered: false }
+        Self { enabled: true, interval_minutes: 30, retention: 10, destination: PathBuf::from("backups"), mirror_destination: None, on_stop: true, tiered: false, player_snapshots: true, player_keep: 10 }
     }
 }
 impl Default for ScheduleSettings {

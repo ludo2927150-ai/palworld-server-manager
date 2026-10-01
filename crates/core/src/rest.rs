@@ -5,7 +5,7 @@ use crate::{settings::RestSettings, Result};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Player {
     pub name: String,
     #[serde(rename = "accountName", default)]
@@ -18,6 +18,13 @@ pub struct Player {
     pub level: u32,
     #[serde(default)]
     pub ping: f32,
+    /// Position dans le monde (coordonnées du jeu) et nombre de constructions, si l'API les fournit.
+    #[serde(default)]
+    pub location_x: f64,
+    #[serde(default)]
+    pub location_y: f64,
+    #[serde(default)]
+    pub building_count: u32,
 }
 
 #[derive(Debug, Deserialize)]

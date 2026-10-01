@@ -9,6 +9,7 @@ use std::{collections::{HashMap, HashSet}, path::PathBuf};
 /// ne gonfle pas le temps de jeu.
 const MAX_GAP_SECS: i64 = 30;
 const MAX_NAMES: usize = 5;
+const MAX_LEVEL_POINTS: usize = 300;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct KnownPlayer {
@@ -20,6 +21,31 @@ pub struct KnownPlayer {
     pub last_seen: i64,
     pub sessions: u32,
     pub total_secs: u64,
+    /// Identifiant de joueur du jeu (nom des fichiers `Players/<id>.sav`).
+    #[serde(default)]
+    pub player_id: String,
+    #[serde(default)]
+    pub level: u32,
+    #[serde(default)]
+    pub max_level: u32,
+    /// Dernière position connue (coordonnées du jeu).
+    #[serde(default)]
+    pub location: Option<(f64, f64)>,
+    #[serde(default)]
+    pub buildings: u32,
+    /// Évolution du niveau : (instant, niveau) à chaque changement (300 points au plus).
+    #[serde(default)]
+    pub level_history: Vec<(i64, u32)>,
+}
+
+/// Ce que l'API REST dit d'un joueur connecté.
+#[derive(Debug, Clone, Default)]
+pub struct Seen { pub user_id: String, pub name: String, pub player_id: String, pub level: u32, pub x: f64, pub y: f64, pub buildings: u32 }
+
+impl Seen {
+    pub fn from_rest(p: &crate::rest::Player) -> Self {
+        Self { user_id: p.user_id.clone(), name: p.name.clone(), player_id: p.player_id.clone(), level: p.level, x: p.location_x, y: p.location_y, buildings: p.building_count }
+    }
 }
 
 pub struct PlayerBook {
@@ -40,14 +66,25 @@ impl PlayerBook {
 
     /// Met à jour le carnet avec les joueurs actuellement connectés (`(user_id, pseudo)`).
     /// Renvoie `(arrivées, départs)` sous forme d'identifiants.
-    pub fn observe(&mut self, now: i64, current: &[(String, String)]) -> (Vec<String>, Vec<String>) {
+    pub fn observe(&mut self, now: i64, current: &[Seen]) -> (Vec<String>, Vec<String>) {
         let gap = self.last_tick.map_or(0, |t| (now - t).clamp(0, MAX_GAP_SECS));
-        let present: HashSet<&str> = current.iter().map(|(id, _)| id.as_str()).filter(|id| !id.is_empty()).collect();
+        let present: HashSet<&str> = current.iter().map(|c| c.user_id.as_str()).filter(|id| !id.is_empty()).collect();
         let (mut joined, mut left) = (Vec::new(), Vec::new());
-        for (id, name) in current.iter().filter(|(id, _)| !id.is_empty()) {
+        for c in current.iter().filter(|c| !c.user_id.is_empty()) {
+            let (id, name) = (&c.user_id, &c.name);
             let p = self.players.entry(id.clone()).or_insert_with(|| KnownPlayer {
                 user_id: id.clone(), name: name.clone(), previous_names: Vec::new(), first_seen: now, last_seen: now, sessions: 0, total_secs: 0,
+                player_id: String::new(), level: 0, max_level: 0, location: None, buildings: 0, level_history: Vec::new(),
             });
+            if !c.player_id.is_empty() { p.player_id = c.player_id.clone(); }
+            if c.level > 0 && c.level != p.level {
+                p.level = c.level;
+                p.max_level = p.max_level.max(c.level);
+                p.level_history.push((now, c.level));
+                if p.level_history.len() > MAX_LEVEL_POINTS { p.level_history.remove(1); } // on garde toujours le premier point
+            }
+            if c.x != 0.0 || c.y != 0.0 { p.location = Some((c.x, c.y)); }
+            if c.buildings > 0 || p.buildings > 0 { p.buildings = c.buildings; }
             if p.name != *name {
                 let old = std::mem::replace(&mut p.name, name.clone());
                 p.previous_names.retain(|n| n != &old && n != name);
@@ -135,7 +172,7 @@ mod tests {
     use super::*;
     use crate::settings::AllowedPlayer;
 
-    fn cur(v: &[(&str, &str)]) -> Vec<(String, String)> { v.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect() }
+    fn cur(v: &[(&str, &str)]) -> Vec<Seen> { v.iter().map(|(a, b)| Seen { user_id: a.to_string(), name: b.to_string(), ..Default::default() }).collect() }
     fn tmp(n: &str) -> PathBuf { std::env::temp_dir().join(format!("pal-pl-{n}-{}.json", std::process::id())) }
 
     #[test]
@@ -155,6 +192,23 @@ mod tests {
         b.observe(1020, &cur(&[("steam_1", "AliceV2")])); // retour : nouvelle session, sans compter le temps hors ligne
         let pl = &b.list()[0];
         assert_eq!((pl.sessions, pl.total_secs, pl.first_seen), (2, 10, 1000));
+    }
+
+    #[test]
+    fn details_track_level_history_position_and_buildings() {
+        let mut b = PlayerBook::open(tmp("e"));
+        let seen = |lvl, x, y, bld| vec![Seen { user_id: "steam_1".into(), name: "A".into(), player_id: "F8A7388F000000000000000000000000".into(), level: lvl, x, y, buildings: bld }];
+        b.observe(100, &seen(5, 10.0, 20.0, 0));
+        b.observe(105, &seen(5, 11.0, 21.0, 0)); // même niveau : pas de nouveau point
+        b.observe(110, &seen(6, 0.0, 0.0, 3)); // position inconnue : on garde la précédente
+        let p = &b.list()[0];
+        assert_eq!(p.player_id, "F8A7388F000000000000000000000000");
+        assert_eq!((p.level, p.max_level, p.buildings), (6, 6, 3));
+        assert_eq!(p.level_history, vec![(100, 5), (110, 6)]);
+        assert_eq!(p.location, Some((11.0, 21.0)));
+        for i in 0..400 { b.observe(200 + i, &seen(7 + i as u32, 1.0, 1.0, 0)); }
+        let p = &b.list()[0];
+        assert!(p.level_history.len() <= MAX_LEVEL_POINTS && p.level_history[0] == (100, 5));
     }
 
     #[test]
