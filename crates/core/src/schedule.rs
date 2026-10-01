@@ -11,6 +11,24 @@ pub enum Action {
     Restart,
 }
 
+/// Déclencheur quotidien (résumé) : renvoie `true` une seule fois par jour, à partir de l'heure choisie.
+#[derive(Default)]
+pub struct DailyTrigger {
+    last: Option<chrono::NaiveDate>,
+}
+
+impl DailyTrigger {
+    pub fn new() -> Self { Self::default() }
+    pub fn due(&mut self, time: Option<&str>, now: NaiveDateTime) -> bool {
+        let Some(t) = time.and_then(|t| NaiveTime::parse_from_str(t.trim(), "%H:%M").ok()) else { return false };
+        if now.time() >= t && self.last != Some(now.date()) {
+            self.last = Some(now.date());
+            return true;
+        }
+        false
+    }
+}
+
 #[derive(Default)]
 pub struct Scheduler {
     fired: HashSet<(NaiveDateTime, u32)>,
@@ -62,6 +80,15 @@ mod tests {
         assert_eq!(s.tick(&c, at(3, 59, 1)), vec![Action::Announce { minutes: 1 }]);
         assert_eq!(s.tick(&c, at(4, 0, 0)), vec![Action::Restart]);
         assert!(s.tick(&c, at(4, 0, 5)).is_empty());
+    }
+
+    #[test]
+    fn daily_trigger_fires_once_per_day() {
+        let mut d = DailyTrigger::new();
+        assert!(!d.due(Some("20:00"), at(19, 59, 0)));
+        assert!(d.due(Some("20:00"), at(20, 0, 5)));
+        assert!(!d.due(Some("20:00"), at(20, 5, 0)));
+        assert!(!d.due(None, at(21, 0, 0)) && !d.due(Some("pas une heure"), at(21, 0, 0)));
     }
 
     #[test]

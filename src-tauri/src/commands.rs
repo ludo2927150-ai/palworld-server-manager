@@ -7,6 +7,17 @@ use tauri::State;
 
 type S<'a> = State<'a, AppState>;
 
+/// Sauvegarde + rotation, puis copie vers le second emplacement s'il est configuré.
+/// Une erreur de copie miroir n'invalide pas la sauvegarde principale.
+pub fn backup_everywhere(s: &AppSettings) -> Result<BackupInfo> {
+    let info = backup::create(&s.save_dir(), &s.backup.destination)?;
+    backup::rotate(&s.backup.destination, s.backup.retention)?;
+    if let Some(m) = &s.backup.mirror_destination {
+        if let Err(e) = backup::mirror(&info.path, m, s.backup.retention) { eprintln!("copie miroir impossible : {e}"); }
+    }
+    Ok(info)
+}
+
 #[tauri::command]
 pub async fn get_settings(st: S<'_>) -> Result<AppSettings> { Ok(st.settings.read().await.clone()) }
 
@@ -69,9 +80,7 @@ pub async fn write_world_settings(st: S<'_>, options: Options) -> Result<()> {
 pub async fn backup_now(st: S<'_>) -> Result<BackupInfo> {
     let s = st.settings.read().await.clone();
     if let Ok(api) = RestClient::new(&s.rest) { let _ = api.save().await; } // flush disque avant copie
-    let info = backup::create(&s.save_dir(), &s.backup.destination)?;
-    backup::rotate(&s.backup.destination, s.backup.retention)?;
-    Ok(info)
+    backup_everywhere(&s)
 }
 
 #[tauri::command]
@@ -124,7 +133,7 @@ pub async fn update_server(st: S<'_>) -> Result<String> {
     let res = async {
         if was_running {
             if let Ok(api) = RestClient::new(&s.rest) { let _ = api.save().await; }
-            let _ = backup::create(&s.save_dir(), &s.backup.destination);
+            let _ = backup_everywhere(&s);
             st.expected_stop.store(true, Ordering::SeqCst);
             st.server.stop(&s, Duration::from_secs(60)).await?;
         }
@@ -171,4 +180,17 @@ pub async fn fix_rest(st: S<'_>, admin_password: String) -> Result<()> {
     fixed.save(&st.settings_path)?;
     *st.settings.write().await = fixed;
     Ok(())
+}
+
+#[tauri::command]
+pub async fn get_autostart(app: tauri::AppHandle) -> Result<bool> {
+    use tauri_plugin_autostart::ManagerExt;
+    app.autolaunch().is_enabled().map_err(|e| Error::Other(e.to_string()))
+}
+
+#[tauri::command]
+pub async fn set_autostart(app: tauri::AppHandle, enabled: bool) -> Result<()> {
+    use tauri_plugin_autostart::ManagerExt;
+    let m = app.autolaunch();
+    (if enabled { m.enable() } else { m.disable() }).map_err(|e| Error::Other(e.to_string()))
 }

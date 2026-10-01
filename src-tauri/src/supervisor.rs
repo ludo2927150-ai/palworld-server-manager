@@ -1,8 +1,8 @@
 //! Boucle de fond : échantillonnage (5 s), alertes, planification des redémarrages, backups planifiés,
 //! redémarrage auto après crash. Émet l'événement `snapshot` vers le frontend à chaque tick.
 
-use crate::state::AppState;
-use palmanager_core::{alerts, backup, history::{PlayerEvent, Sample}, rest::RestClient, schedule::Action, settings::AppSettings};
+use crate::{commands::backup_everywhere, state::AppState};
+use palmanager_core::{alerts, history::{PlayerEvent, Sample}, summary, rest::RestClient, schedule::Action, settings::AppSettings};
 use std::{collections::HashSet, sync::atomic::Ordering, time::{Duration, Instant}};
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -10,9 +10,7 @@ use tauri::{AppHandle, Emitter, Manager};
 async fn maintenance_restart(st: &AppState, s: &AppSettings) {
     if st.maintenance.swap(true, Ordering::SeqCst) { return; }
     if let Ok(api) = RestClient::new(&s.rest) { let _ = api.save().await; }
-    if backup::create(&s.save_dir(), &s.backup.destination).is_ok() {
-        let _ = backup::rotate(&s.backup.destination, s.backup.retention);
-    }
+    let _ = backup_everywhere(s);
     st.expected_stop.store(true, Ordering::SeqCst);
     let _ = st.server.stop(s, Duration::from_secs(60)).await;
     st.expected_stop.store(false, Ordering::SeqCst);
@@ -23,6 +21,7 @@ async fn maintenance_restart(st: &AppState, s: &AppSettings) {
 pub fn spawn(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let mut last_backup = Instant::now();
+        let mut daily = palmanager_core::schedule::DailyTrigger::new();
         let mut last_sample = 0i64;
         let mut known: HashSet<String> = HashSet::new();
         let mut tick = tokio::time::interval(Duration::from_secs(5));
@@ -67,9 +66,7 @@ pub fn spawn(app: AppHandle) {
 
             if s.backup.enabled && snap.running && last_backup.elapsed() >= Duration::from_secs(s.backup.interval_minutes.max(1) * 60) {
                 if let Some(api) = &api { let _ = api.save().await; }
-                if backup::create(&s.save_dir(), &s.backup.destination).is_ok() {
-                    let _ = backup::rotate(&s.backup.destination, s.backup.retention);
-                }
+                let _ = backup_everywhere(&s);
                 last_backup = Instant::now();
             }
 
@@ -84,6 +81,13 @@ pub fn spawn(app: AppHandle) {
                 for n in now.difference(&known) { let _ = st.history.add_event(&PlayerEvent { t: ts, name: n.clone(), joined: true }); }
                 for n in known.difference(&now) { let _ = st.history.add_event(&PlayerEvent { t: ts, name: n.clone(), joined: false }); }
                 known = now;
+            }
+
+            // Résumé quotidien (Discord / ntfy) à l'heure choisie.
+            if daily.due(s.alerts.daily_summary_time.as_deref(), chrono::Local::now().naive_local()) {
+                let since = ts - 86_400;
+                let text = summary::build(&st.history.samples_since(since, 10_000), &st.history.events_since(since), ts);
+                let _ = alerts::dispatch_text(&s.alerts, &text).await;
             }
 
             *st.last_snapshot.write().await = snap.clone();

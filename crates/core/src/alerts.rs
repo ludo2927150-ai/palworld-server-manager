@@ -67,8 +67,13 @@ impl AlertEngine {
 }
 
 pub async fn dispatch(cfg: &AlertSettings, event: &Event) -> Result<()> {
+    dispatch_text(cfg, &event.message()).await
+}
+
+/// Envoie un texte libre sur les canaux configurés (Discord, ntfy).
+pub async fn dispatch_text(cfg: &AlertSettings, msg: &str) -> Result<()> {
     let http = reqwest::Client::builder().timeout(Duration::from_secs(10)).build()?;
-    let msg = event.message();
+    let msg = msg.to_string();
     if let Some(url) = cfg.discord_webhook.as_deref().filter(|u| !u.is_empty()) {
         http.post(url).json(&serde_json::json!({ "content": msg })).send().await?.error_for_status()?;
     }

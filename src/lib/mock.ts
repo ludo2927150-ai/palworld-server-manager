@@ -2,10 +2,10 @@ import type { AppSettings, Opt } from "./types";
 
 const settings: AppSettings = {
   server_dir: "C:\\palworld\\PalServer", steamcmd_path: "steamcmd.exe",
-  schedule: { enabled: false, times: ["04:00"], announce_minutes: [15, 5, 1], memory_restart_percent: null }, launch_args: ["-useperfthreads"], auto_restart: true,
+  schedule: { enabled: false, times: ["04:00"], announce_minutes: [15, 5, 1], memory_restart_percent: null }, launch_args: ["-useperfthreads"], auto_restart: true, close_to_tray: false,
   rest: { host: "127.0.0.1", port: 8212, admin_password: "" },
-  backup: { enabled: true, interval_minutes: 30, retention: 20, destination: "backups" },
-  alerts: { discord_webhook: null, ntfy_url: null, on_crash: true, on_player_join: true, on_player_leave: false, memory_threshold_percent: 90, cooldown_secs: 300 },
+  backup: { enabled: true, interval_minutes: 30, retention: 20, destination: "backups", mirror_destination: null },
+  alerts: { discord_webhook: null, ntfy_url: null, on_crash: true, on_player_join: true, on_player_leave: false, memory_threshold_percent: 90, cooldown_secs: 300, daily_summary_time: null },
 };
 let world: Opt[] = [
   { key: "ServerName", value: "Default Palworld Server", quoted: true },
@@ -34,6 +34,7 @@ export async function mock<T>(cmd: string, args?: Record<string, unknown>): Prom
     }
     case "read_logs": return r({ lines: ["[demo] Server started", "[demo] Alice joined the game"], offset: 0 });
     case "diagnose": return r([{ id: "exe", label: "PalServer.exe trouvé", ok: true, detail: "" }, { id: "rest_enabled", label: "API REST activée (RESTAPIEnabled=True)", ok: false, detail: "" }]);
+    case "get_autostart": return r(false);
     case "read_world_settings": return r({ options: world, from_default: false });
     case "write_world_settings": world = (args as { options: Opt[] }).options; return r(undefined);
     case "list_backups": return r([{ file_name: "palworld-20260930-120000.zip", path: "backups/x.zip", size_bytes: 52_000_000, created: new Date().toISOString() }]);

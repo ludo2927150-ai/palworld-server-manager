@@ -10,12 +10,13 @@ export interface BackupInfo { file_name: string; path: string; size_bytes: numbe
 export interface AppSettings {
   server_dir: string; steamcmd_path: string;
   schedule: { enabled: boolean; times: string[]; announce_minutes: number[]; memory_restart_percent: number | null };
-  launch_args: string[]; auto_restart: boolean;
+  launch_args: string[]; auto_restart: boolean; close_to_tray: boolean;
   rest: { host: string; port: number; admin_password: string };
-  backup: { enabled: boolean; interval_minutes: number; retention: number; destination: string };
+  backup: { enabled: boolean; interval_minutes: number; retention: number; destination: string; mirror_destination: string | null };
   alerts: {
     discord_webhook: string | null; ntfy_url: string | null; on_crash: boolean; on_player_join: boolean;
     on_player_leave: boolean; memory_threshold_percent: number | null; cooldown_secs: number;
+    daily_summary_time: string | null;
   };
 }
 export interface Sample { t: number; cpu: number; mem_percent: number; players: number; fps: number }

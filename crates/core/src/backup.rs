@@ -44,6 +44,14 @@ fn info_for(path: &Path) -> Result<BackupInfo> {
     })
 }
 
+/// Copie une archive vers un second emplacement puis applique la même rotation.
+pub fn mirror(archive: &Path, dest: &Path, keep: usize) -> Result<()> {
+    std::fs::create_dir_all(dest)?;
+    if let Some(name) = archive.file_name() { std::fs::copy(archive, dest.join(name))?; }
+    rotate(dest, keep)?;
+    Ok(())
+}
+
 /// Sauvegardes existantes, la plus récente d'abord.
 pub fn list(dest: &Path) -> Result<Vec<BackupInfo>> {
     let mut v = Vec::new();
@@ -95,6 +103,9 @@ mod tests {
         create(&tmp.join("SaveGames"), &dest).unwrap();
         assert_eq!(list(&dest).unwrap().len(), 1);
         assert_eq!(rotate(&dest, 5).unwrap(), 0);
+        let second = tmp.join("mirror");
+        mirror(&list(&dest).unwrap()[0].path, &second, 5).unwrap();
+        assert_eq!(list(&second).unwrap().len(), 1);
         let arc = list(&dest).unwrap().remove(0).path;
         std::fs::remove_file(saves.join("Level.sav")).unwrap();
         restore(&arc, &tmp.join("SaveGames")).unwrap();

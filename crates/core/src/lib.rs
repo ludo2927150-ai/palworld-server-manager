@@ -12,6 +12,7 @@ pub mod rest;
 pub mod schedule;
 pub mod server;
 pub mod settings;
+pub mod summary;
 pub mod setup;
 pub mod steamcmd;
 

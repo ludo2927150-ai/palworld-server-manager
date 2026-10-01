@@ -17,6 +17,8 @@ pub struct AppSettings {
     pub steamcmd_path: PathBuf,
     /// Relance automatique après un crash.
     pub auto_restart: bool,
+    /// Fermer la fenêtre la réduit dans la zone de notification au lieu de quitter.
+    pub close_to_tray: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,6 +36,8 @@ pub struct BackupSettings {
     pub interval_minutes: u64,
     pub retention: usize,
     pub destination: PathBuf,
+    /// Second emplacement (autre disque, dossier synchronisé…) où chaque sauvegarde est aussi copiée.
+    pub mirror_destination: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -59,6 +63,8 @@ pub struct AlertSettings {
     pub on_player_leave: bool,
     pub memory_threshold_percent: Option<f32>,
     pub cooldown_secs: u64,
+    /// Heure d'envoi du résumé quotidien (`HH:MM`, heure locale) ; `None` = désactivé.
+    pub daily_summary_time: Option<String>,
 }
 
 impl Default for AppSettings {
@@ -72,6 +78,7 @@ impl Default for AppSettings {
             schedule: ScheduleSettings::default(),
             steamcmd_path: PathBuf::from("steamcmd.exe"),
             auto_restart: true,
+            close_to_tray: false,
         }
     }
 }
@@ -80,7 +87,7 @@ impl Default for RestSettings {
 }
 impl Default for BackupSettings {
     fn default() -> Self {
-        Self { enabled: true, interval_minutes: 30, retention: 20, destination: PathBuf::from("backups") }
+        Self { enabled: true, interval_minutes: 30, retention: 20, destination: PathBuf::from("backups"), mirror_destination: None }
     }
 }
 impl Default for ScheduleSettings {
@@ -92,7 +99,7 @@ impl Default for AlertSettings {
     fn default() -> Self {
         Self {
             discord_webhook: None, ntfy_url: None, on_crash: true, on_player_join: true,
-            on_player_leave: false, memory_threshold_percent: Some(90.0), cooldown_secs: 300,
+            on_player_leave: false, memory_threshold_percent: Some(90.0), cooldown_secs: 300, daily_summary_time: None,
         }
     }
 }
