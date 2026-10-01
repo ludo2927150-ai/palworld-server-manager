@@ -4,7 +4,7 @@ export type Lang = "fr" | "en";
 const EN: Record<string, string> = {
   "Tableau de bord": "Dashboard", "Rejoindre": "Join", "Historique": "History", "Performance": "Performance", "Mods": "Mods",
   "Joueurs": "Players", "Annonces": "Announcements", "Configuration": "Settings", "Journal": "Log", "Sauvegardes": "Backups",
-  "Diagnostic": "Diagnostics", "Mobile": "Mobile", "Application": "App",
+  "Diagnostic": "Diagnostics", "Mobile": "Mobile", "Application": "App", "Manuel": "Manual",
   "MODE DÉMO — données fictives affichées dans le navigateur. Lancez « npm run tauri dev » (ou l'installeur) pour piloter un vrai serveur.":
     "DEMO MODE — fake data shown in the browser. Run “npm run tauri dev” (or the installer) to manage a real server.",
   "Nouvelle version disponible : {latest} (vous avez {current}).": "New version available: {latest} (you have {current}).",

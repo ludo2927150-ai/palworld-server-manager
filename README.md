@@ -26,7 +26,7 @@ Application desktop Windows (Tauri 2 + React + Tailwind) pour piloter un serveur
 
 > ⚠️ Dans un navigateur (`npm run dev`) l'interface affiche des **données fictives** (bandeau « MODE DÉMO »). Seule l'application Tauri pilote un vrai serveur.
 
-**📖 Manuel d'utilisation complet : [`docs/MANUEL.md`](docs/MANUEL.md)** (toutes les fonctions, réglages, automatismes, recettes et dépannage).
+**📖 Manuel d'utilisation complet** : onglet **Manuel** dans l'application (hors ligne, avec sommaire et recherche), [`docs/MANUEL.md`](docs/MANUEL.md) ou [`docs/MANUEL.pdf`](docs/MANUEL.pdf) (42 pages). Régénérer le PDF : `node scripts/manuel-pdf.mjs`.
 
 ## Télécharger l'application (Windows)
 

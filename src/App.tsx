@@ -15,10 +15,11 @@ import Mobile from "./pages/Mobile";
 import Mods from "./pages/Mods";
 import { t, getLang, setLang } from "./lib/i18n";
 import LockScreen from "./components/LockScreen";
+import Manual from "./pages/Manual";
 import Wizard from "./pages/Wizard";
 import Announcements from "./pages/Announcements";
 
-const TABS = ["Tableau de bord", "Rejoindre", "Historique", "Performance", "Mods", "Joueurs", "Annonces", "Configuration", "Journal", "Sauvegardes", "Diagnostic", "Mobile", "Application"] as const;
+const TABS = ["Tableau de bord", "Rejoindre", "Historique", "Performance", "Mods", "Joueurs", "Annonces", "Configuration", "Journal", "Sauvegardes", "Diagnostic", "Mobile", "Application", "Manuel"] as const;
 type Tab = (typeof TABS)[number];
 
 export default function App() {
@@ -115,6 +116,7 @@ export default function App() {
         {tab === "Annonces" && <Announcements notify={notify} />}
         {tab === "Mods" && <Mods notify={notify} />}
         {tab === "Mobile" && <Mobile notify={notify} />}
+        {tab === "Manuel" && <Manual />}
         {tab === "Diagnostic" && <Diagnostic notify={notify} />}
         {tab === "Joueurs" && <Players snap={snap} notify={notify} />}
         {tab === "Configuration" && <Config notify={notify} />}
