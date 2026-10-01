@@ -121,8 +121,7 @@ pub fn spawn(app: AppHandle) {
             for e in &events {
                 // Crash : on ajoute la cause probable tirée de la fin du journal, si on en reconnaît une.
                 if matches!(e, alerts::Event::Crash) {
-                    let path = s.server_dir.join("Pal/Saved/Logs/Pal.log");
-                    let cause = palmanager_core::logs::read_from(&path, None).ok().and_then(|c| palmanager_core::loganalysis::probable_cause(&c.lines));
+                    let cause = palmanager_core::logs::read_located(&s.server_dir, s.log_file.as_deref(), None).ok().and_then(|c| palmanager_core::loganalysis::probable_cause(&c.lines));
                     let msg = match cause { Some(c) => format!("{} Cause probable : {c}.", e.message()), None => e.message() };
                     toast(&app, &s, &msg);
                     let _ = alerts::dispatch_text(&s.alerts, &msg).await;

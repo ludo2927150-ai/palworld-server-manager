@@ -29,6 +29,8 @@ pub struct AppSettings {
     pub close_to_tray: bool,
     /// Assistant de premier lancement terminé ou ignoré.
     pub setup_done: bool,
+    /// Fichier journal à lire (vide = détection automatique du `.log` le plus récent sous `Pal/Saved`).
+    pub log_file: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -241,6 +243,7 @@ impl Default for AppSettings {
             start_server_on_launch: false,
             close_to_tray: false,
             setup_done: false,
+            log_file: None,
         }
     }
 }

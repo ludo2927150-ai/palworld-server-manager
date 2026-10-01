@@ -14,6 +14,8 @@ export default function LogViewer({ notify, compact = false }: Props) {
   const [filter, setFilter] = useState("");
   const [follow, setFollow] = useState(true);
   const offset = useRef<number | null>(null);
+  const source = useRef<string>("");
+  const [info, setInfo] = useState<{ source: string; hint: string | null }>({ source: "", hint: null });
   const box = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -22,6 +24,10 @@ export default function LogViewer({ notify, compact = false }: Props) {
       try {
         const c = await api.logs(offset.current);
         if (dead) return;
+        setInfo((cur) => (cur.source === c.source && cur.hint === c.hint ? cur : { source: c.source, hint: c.hint }));
+        // Un autre fichier est devenu le plus récent (rotation, nouveau démarrage) : on repart de sa fin.
+        if (offset.current !== null && c.source !== source.current) { source.current = c.source; offset.current = null; setLines([]); return poll(); }
+        source.current = c.source;
         // Offset plus petit que le précédent = fichier tronqué/rotaté : on repart de zéro côté affichage.
         const rotated = offset.current !== null && c.offset < offset.current;
         offset.current = c.offset;
@@ -43,11 +49,11 @@ export default function LogViewer({ notify, compact = false }: Props) {
       <div className="flex flex-wrap items-center gap-3">
         <input className="input max-w-xs" placeholder="Filtrer (ex. error, joined)" value={filter} onChange={(e) => setFilter(e.target.value)} />
         <label className="text-sm"><input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} /> Suivre</label>
-        <span className="text-xs text-slate-500">{shown.length} / {lines.length} lignes · Pal/Saved/Logs/Pal.log</span>
+        <span className="text-xs text-slate-500">{shown.length} / {lines.length} lignes · {info.source || "aucun fichier"}</span>
       </div>
       <div ref={box} aria-live="off"
         className={`card overflow-y-auto font-mono text-xs leading-5 ${compact ? "h-64" : "min-h-0 flex-1"}`}>
-        {shown.length === 0 ? <p className="text-slate-500">Aucune ligne (le serveur n'a pas encore écrit de journal).</p>
+        {shown.length === 0 ? <p className="text-slate-500">{info.hint ?? "Aucune ligne pour l'instant."}</p>
           : shown.map((l, i) => <div key={i} className={/error|fatal|crash/i.test(l) ? "text-red-400" : /warn/i.test(l) ? "text-amber-300" : ""}>{l}</div>)}
       </div>
     </div>

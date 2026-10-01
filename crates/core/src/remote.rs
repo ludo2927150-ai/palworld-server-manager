@@ -235,7 +235,7 @@ mod tests {
         async fn control(&self, a: Control) -> Result<()> { self.calls.lock().unwrap().push(format!("{a:?}")); Ok(()) }
         async fn history(&self, _: i64) -> Vec<Sample> { vec![] }
         async fn sessions(&self, _: i64) -> Vec<Session> { vec![] }
-        async fn logs(&self, _: Option<u64>) -> Result<LogChunk> { Ok(LogChunk { lines: vec!["hello".into()], offset: 6 }) }
+        async fn logs(&self, _: Option<u64>) -> Result<LogChunk> { Ok(LogChunk { lines: vec!["hello".into()], offset: 6, source: String::new(), hint: None }) }
         async fn backup_now(&self) -> Result<BackupInfo> { Err(Error::Other("pas de serveur".into())) }
         async fn announce(&self, m: String) -> Result<()> { self.calls.lock().unwrap().push(format!("announce:{m}")); Ok(()) }
         async fn kick(&self, u: String) -> Result<()> { self.calls.lock().unwrap().push(format!("kick:{u}")); Ok(()) }

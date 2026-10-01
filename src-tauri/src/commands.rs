@@ -259,8 +259,8 @@ pub async fn get_sessions(st: S<'_>, days: i64) -> Result<Vec<Session>> {
 
 #[tauri::command]
 pub async fn read_logs(st: S<'_>, offset: Option<u64>) -> Result<LogChunk> {
-    let path = st.settings.read().await.server_dir.join("Pal/Saved/Logs/Pal.log");
-    logs::read_from(&path, offset)
+    let s = st.settings.read().await;
+    logs::read_located(&s.server_dir, s.log_file.as_deref(), offset)
 }
 
 #[tauri::command]
@@ -457,8 +457,8 @@ pub async fn mods_remove(st: S<'_>, workshop_id: String) -> Result<()> {
 /// Analyse la fin du journal du serveur (≈ 64 Ko) et renvoie les causes probables de problèmes.
 #[tauri::command]
 pub async fn analyze_log(st: S<'_>) -> Result<Vec<palmanager_core::loganalysis::Finding>> {
-    let path = st.settings.read().await.server_dir.join("Pal/Saved/Logs/Pal.log");
-    let chunk = logs::read_from(&path, None)?;
+    let s = st.settings.read().await;
+    let chunk = logs::read_located(&s.server_dir, s.log_file.as_deref(), None)?;
     Ok(palmanager_core::loganalysis::analyze(&chunk.lines))
 }
 
