@@ -85,6 +85,7 @@ export default function Settings({ notify }: { notify: (m: string) => void }) {
           <span className="ml-2 text-xs text-slate-500">à utiliser avec l'application installée (pas avec « npm run tauri dev »)</span>
           {autostartError && <span className="mt-1 block text-xs text-red-400" role="alert">{autostartError}</span>}
         </Row>
+        <Row label="Démarrer le serveur automatiquement au lancement de l'application (≈ 15 s après)"><input type="checkbox" checked={s.start_server_on_launch} onChange={(e) => setS({ ...s, start_server_on_launch: e.target.checked })} /></Row>
         <Row label="Fermer la fenêtre = réduire dans la zone de notification"><input type="checkbox" checked={s.close_to_tray} onChange={(e) => setS({ ...s, close_to_tray: e.target.checked })} /></Row>
         <Row label="Redémarrage auto après crash"><input type="checkbox" checked={s.auto_restart} onChange={(e) => setS({ ...s, auto_restart: e.target.checked })} /></Row>
       </div>

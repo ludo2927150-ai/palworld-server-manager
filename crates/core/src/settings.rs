@@ -18,6 +18,8 @@ pub struct AppSettings {
     pub steamcmd_path: PathBuf,
     /// Relance automatique après un crash.
     pub auto_restart: bool,
+    /// Démarre le serveur automatiquement ~15 s après le lancement de l'application (utile avec « Lancer avec Windows »).
+    pub start_server_on_launch: bool,
     /// Fermer la fenêtre la réduit dans la zone de notification au lieu de quitter.
     pub close_to_tray: bool,
 }
@@ -116,6 +118,7 @@ impl Default for AppSettings {
             performance: PerformanceSettings::default(),
             steamcmd_path: PathBuf::from("steamcmd.exe"),
             auto_restart: true,
+            start_server_on_launch: false,
             close_to_tray: false,
         }
     }

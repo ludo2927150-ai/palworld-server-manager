@@ -54,6 +54,8 @@ pub fn spawn(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let mut last_backup = Instant::now();
         let mut daily = palmanager_core::schedule::DailyTrigger::new();
+        let started_at = Instant::now();
+        let mut launch_start_done = false;
         let mut prev_running = false;
         let mut perf_applied: Option<(String, Vec<u32>)> = None; // (réglages, PID déjà traités)
         let mut last_limit_restart: Option<Instant> = None;
@@ -70,6 +72,12 @@ pub fn spawn(app: AppHandle) {
 
             let snap = st.monitor.lock().await.sample(st.server.pid(), api.as_ref()).await;
             let expected = st.expected_stop.load(Ordering::SeqCst) || maintenance;
+            // Démarrage automatique du serveur ~15 s après le lancement de l'appli (laisse Windows finir de démarrer).
+            if !launch_start_done && started_at.elapsed() >= Duration::from_secs(15) {
+                launch_start_done = true;
+                if s.start_server_on_launch && !snap.running && !maintenance { scheduled_start(&st, &s).await; }
+            }
+
             // Arrêt non demandé depuis l'application (fenêtre du serveur fermée, crash…) : sauvegarde du monde figé,
             // avant toute relance automatique. Nos propres arrêts sont déjà sauvegardés par `ServerController::stop`.
             if prev_running && !snap.running && !expected && s.backup.on_stop {

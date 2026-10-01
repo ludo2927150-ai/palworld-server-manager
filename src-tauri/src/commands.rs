@@ -201,6 +201,11 @@ pub async fn get_autostart() -> Result<bool> { palmanager_core::autostart::is_en
 
 #[tauri::command]
 pub async fn set_autostart(enabled: bool) -> Result<()> {
+    // La version de développement s'ouvre dans une console noire et sans interface (pas de serveur Vite au démarrage de Windows).
+    // On autorise seulement la désactivation : installer l'application (npm run tauri build) avant d'activer.
+    if enabled && cfg!(debug_assertions) {
+        return Err(Error::Other("indisponible en mode développement : installez l'application (npm run tauri build) puis activez cette option depuis la version installée".into()));
+    }
     let exe = std::env::current_exe()?;
     palmanager_core::autostart::set_enabled(&exe, enabled)
 }
