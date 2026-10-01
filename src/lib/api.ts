@@ -42,6 +42,8 @@ export const api = {
   fixRest: (adminPassword: string) => call<void>("fix_rest", { adminPassword }),
   getAutostart: () => call<boolean>("get_autostart"),
   setAutostart: (enabled: boolean) => call<void>("set_autostart", { enabled }),
+  networkInfo: () => call<{ lan_ip: string | null }>("network_info"),
+  publicIp: () => call<string>("public_ip"),
   announce: (message: string) => call<void>("announce", { message }),
   kick: (userId: string) => call<void>("kick_player", { userId }),
 };

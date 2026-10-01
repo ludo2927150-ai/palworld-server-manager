@@ -9,6 +9,7 @@ pub mod history;
 pub mod ini;
 pub mod logs;
 pub mod monitor;
+pub mod net;
 pub mod rest;
 pub mod schedule;
 pub mod server;

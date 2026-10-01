@@ -190,3 +190,18 @@ pub async fn set_autostart(enabled: bool) -> Result<()> {
     let exe = std::env::current_exe()?;
     palmanager_core::autostart::set_enabled(&exe, enabled)
 }
+
+#[derive(serde::Serialize)]
+pub struct NetworkInfo {
+    /// IP du PC sur le réseau local (pour les joueurs connectés au même Wi-Fi/box).
+    pub lan_ip: Option<String>,
+}
+
+#[tauri::command]
+pub async fn network_info() -> Result<NetworkInfo> {
+    Ok(NetworkInfo { lan_ip: palmanager_core::net::lan_ip().map(|ip| ip.to_string()) })
+}
+
+/// IP publique : appelle un service externe (api.ipify.org), uniquement quand l'utilisateur clique.
+#[tauri::command]
+pub async fn public_ip() -> Result<String> { palmanager_core::net::public_ip().await }
