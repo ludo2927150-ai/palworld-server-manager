@@ -13,6 +13,7 @@ import Join from "./pages/Join";
 import Performance from "./pages/Performance";
 import Mobile from "./pages/Mobile";
 import Mods from "./pages/Mods";
+import { t, getLang, setLang } from "./lib/i18n";
 import Wizard from "./pages/Wizard";
 import Announcements from "./pages/Announcements";
 
@@ -20,6 +21,7 @@ const TABS = ["Tableau de bord", "Rejoindre", "Historique", "Performance", "Mods
 type Tab = (typeof TABS)[number];
 
 export default function App() {
+  const [, bump] = useState(0);
   const [tab, setTab] = useState<Tab>("Tableau de bord");
   const [snap, setSnap] = useState<Snapshot | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -51,25 +53,30 @@ export default function App() {
       {wizard && <Wizard onClose={() => setWizard(false)} notify={notify} />}
       {!inTauri && (
         <div className="bg-amber-500 px-4 py-1.5 text-center text-sm font-medium text-black" role="alert">
-          MODE DÉMO — données fictives affichées dans le navigateur. Lancez « npm run tauri dev » (ou l'installeur) pour piloter un vrai serveur.
+          {t("MODE DÉMO — données fictives affichées dans le navigateur. Lancez « npm run tauri dev » (ou l'installeur) pour piloter un vrai serveur.")}
         </div>
       )}
       {update && (
         <div className="flex items-center gap-3 bg-pal-500 px-4 py-1.5 text-sm font-medium text-black" role="status">
-          Nouvelle version disponible : {update.latest} (vous avez {update.current}).
+          {t("Nouvelle version disponible : {latest} (vous avez {current}).", { latest: update.latest, current: update.current })}
           <button className="rounded bg-black/80 px-3 py-0.5 text-white disabled:opacity-50" disabled={updating}
             onClick={() => { setUpdating(true); api.installUpdate(update).catch((e) => { setUpdating(false); notify(String(e)); }); }}>
-            {updating ? "Téléchargement…" : "Télécharger et installer"}
+            {updating ? t("Téléchargement…") : t("Télécharger et installer")}
           </button>
-          <button className="ml-auto underline" onClick={() => setUpdate(null)}>Plus tard</button>
+          <button className="ml-auto underline" onClick={() => setUpdate(null)}>{t("Plus tard")}</button>
         </div>
       )}
       <div className="flex min-h-0 flex-1">
       <nav className="w-56 shrink-0 border-r border-slate-800 p-3">
         <h1 className="mb-4 px-2 text-lg font-bold text-pal-500">Palworld Manager</h1>
-        {TABS.map((t) => (
-          <button key={t} onClick={() => setTab(t)} className={`mb-1 block w-full rounded-lg px-3 py-2 text-left text-sm ${t === tab ? "bg-slate-800" : "hover:bg-slate-900"}`}>{t}</button>
+        {TABS.map((tb) => (
+          <button key={tb} onClick={() => setTab(tb)} className={`mb-1 block w-full rounded-lg px-3 py-2 text-left text-sm ${tb === tab ? "bg-slate-800" : "hover:bg-slate-900"}`}>{t(tb)}</button>
         ))}
+        <label className="mt-4 block px-2 text-xs text-slate-500">{t("Langue")}
+          <select className="input mt-1" value={getLang()} onChange={(e) => { setLang(e.target.value as "fr" | "en"); bump((n) => n + 1); }}>
+            <option value="fr">Français</option><option value="en">English</option>
+          </select>
+        </label>
       </nav>
       <main className="min-h-0 flex-1 overflow-y-auto p-6">
         {tab === "Tableau de bord" && <Dashboard snap={snap} notify={notify} />}

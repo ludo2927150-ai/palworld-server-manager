@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../lib/api";
+import { t } from "../lib/i18n";
 import type { AppSettings, BanEntry, KnownPlayer, Snapshot } from "../lib/types";
 
 const TABS = ["En ligne", "Historique", "Bannis", "Liste blanche"] as const;
@@ -38,23 +39,23 @@ export default function Players({ snap, notify }: { snap: Snapshot | null; notif
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2">
-        {TABS.map((t) => <button key={t} className={t === tab ? "btn-primary" : "btn"} onClick={() => setTab(t)}>{t}{t === "Bannis" && bans.length ? ` (${bans.length})` : ""}</button>)}
+        {TABS.map((tb) => <button key={tb} className={tb === tab ? "btn-primary" : "btn"} onClick={() => setTab(tb)}>{t(tb)}{tb === "Bannis" && bans.length ? ` (${bans.length})` : ""}</button>)}
       </div>
 
       {tab === "En ligne" && (
         <>
           <div className="card">
             <h2 className="mb-3 font-semibold">Joueurs connectés ({players.length})</h2>
-            {players.length === 0 ? <p className="text-sm text-slate-400">Personne en ligne.</p> : (
+            {players.length === 0 ? <p className="text-sm text-slate-400">{t("Personne en ligne.")}</p> : (
               <table className="w-full text-left text-sm">
-                <thead className="text-slate-400"><tr><th>Nom</th><th>Niveau</th><th>Ping</th><th /></tr></thead>
+                <thead className="text-slate-400"><tr><th>{t("Nom")}</th><th>{t("Niveau")}</th><th>Ping</th><th /></tr></thead>
                 <tbody>
                   {players.map((p) => (
                     <tr key={p.userId} className="border-t border-slate-800">
                       <td className="py-2">{p.name}</td><td>{p.level}</td><td>{Math.round(p.ping)} ms</td>
                       <td className="space-x-2 text-right">
-                        <button className="btn" onClick={() => run(() => api.kick(p.userId), `${p.name} expulsé`)}>Expulser</button>
-                        <button className="btn-danger" onClick={() => { const reason = prompt(`Bannir ${p.name} ? Raison (facultative) :`, ""); if (reason !== null) run(() => api.ban(p.userId, p.name, reason), `${p.name} banni`); }}>Bannir</button>
+                        <button className="btn" onClick={() => run(() => api.kick(p.userId), `${p.name} expulsé`)}>{t("Expulser")}</button>
+                        <button className="btn-danger" onClick={() => { const reason = prompt(`Bannir ${p.name} ? Raison (facultative) :`, ""); if (reason !== null) run(() => api.ban(p.userId, p.name, reason), `${p.name} banni`); }}>{t("Bannir")}</button>
                       </td>
                     </tr>
                   ))}
@@ -64,8 +65,8 @@ export default function Players({ snap, notify }: { snap: Snapshot | null; notif
           </div>
           <div className="card">
             <div className="flex gap-2">
-              <input className="input" placeholder="Annonce à tous les joueurs" value={msg} onChange={(e) => setMsg(e.target.value)} />
-              <button className="btn-primary" disabled={!msg.trim()} onClick={() => run(() => api.announce(msg), "Annonce envoyée").then(() => setMsg(""))}>Envoyer</button>
+              <input className="input" placeholder={t("Annonce à tous les joueurs")} value={msg} onChange={(e) => setMsg(e.target.value)} />
+              <button className="btn-primary" disabled={!msg.trim()} onClick={() => run(() => api.announce(msg), "Annonce envoyée").then(() => setMsg(""))}>{t("Envoyer")}</button>
             </div>
           </div>
         </>
@@ -80,22 +81,22 @@ export default function Players({ snap, notify }: { snap: Snapshot | null; notif
           {known.length === 0 ? <p className="text-sm text-slate-400">Aucun joueur enregistré pour l'instant : le carnet se remplit tant que le serveur tourne.</p> : (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
-                <thead className="text-slate-400"><tr><th>Joueur</th><th>Dernière vue</th><th>Temps de jeu</th><th>Sessions</th><th>Première vue</th><th /></tr></thead>
+                <thead className="text-slate-400"><tr><th>Joueur</th><th>{t("Dernière vue")}</th><th>{t("Temps de jeu")}</th><th>Sessions</th><th>{t("Première vue")}</th><th /></tr></thead>
                 <tbody>
                   {known.filter((p) => !q.trim() || `${p.name} ${p.user_id} ${p.previous_names.join(" ")}`.toLowerCase().includes(q.trim().toLowerCase())).map((p) => (
                     <tr key={p.user_id} className="border-t border-slate-800">
                       <td className="py-2">
                         <div className="flex items-center gap-2">{p.online && <span className="h-2 w-2 rounded-full bg-emerald-400" title="en ligne" />}<strong>{p.name}</strong>
-                          {p.banned && <span className="rounded bg-red-500/20 px-1.5 text-xs text-red-300">banni</span>}
-                          {p.allowed && <span className="rounded bg-emerald-500/20 px-1.5 text-xs text-emerald-300">autorisé</span>}</div>
+                          {p.banned && <span className="rounded bg-red-500/20 px-1.5 text-xs text-red-300">{t("banni")}</span>}
+                          {p.allowed && <span className="rounded bg-emerald-500/20 px-1.5 text-xs text-emerald-300">{t("autorisé")}</span>}</div>
                         <div className="text-xs text-slate-500">{p.user_id}{p.previous_names.length ? ` · anciens pseudos : ${p.previous_names.join(", ")}` : ""}</div>
                       </td>
                       <td>{p.online ? "maintenant" : when(p.last_seen)}</td><td>{dur(p.total_secs)}</td><td>{p.sessions}</td><td>{when(p.first_seen)}</td>
                       <td className="space-x-2 text-right">
-                        {!p.allowed && <button className="btn" onClick={() => allow(p.user_id, p.name)}>Autoriser</button>}
+                        {!p.allowed && <button className="btn" onClick={() => allow(p.user_id, p.name)}>{t("Autoriser")}</button>}
                         {p.banned
-                          ? <button className="btn" onClick={() => run(() => api.unban(p.user_id), `${p.name} débanni`)}>Débannir</button>
-                          : <button className="btn-danger" onClick={() => { const reason = prompt(`Bannir ${p.name} ? Raison (facultative) :`, ""); if (reason !== null) run(() => api.ban(p.user_id, p.name, reason), `${p.name} banni`); }}>Bannir</button>}
+                          ? <button className="btn" onClick={() => run(() => api.unban(p.user_id), `${p.name} débanni`)}>{t("Débannir")}</button>
+                          : <button className="btn-danger" onClick={() => { const reason = prompt(`Bannir ${p.name} ? Raison (facultative) :`, ""); if (reason !== null) run(() => api.ban(p.user_id, p.name, reason), `${p.name} banni`); }}>{t("Bannir")}</button>}
                       </td>
                     </tr>
                   ))}
@@ -115,14 +116,14 @@ export default function Players({ snap, notify }: { snap: Snapshot | null; notif
               {bans.map((b) => (
                 <li key={b.user_id} className="flex flex-wrap items-center gap-3 py-2">
                   <div><strong>{b.name || "(pseudo inconnu)"}</strong><div className="text-xs text-slate-500">{b.user_id} · {when(b.banned_at)}{b.reason ? ` · ${b.reason}` : ""}</div></div>
-                  <button className="btn ml-auto" onClick={() => run(() => api.unban(b.user_id), "Joueur débanni")}>Débannir</button>
+                  <button className="btn ml-auto" onClick={() => run(() => api.unban(b.user_id), "Joueur débanni")}>{t("Débannir")}</button>
                 </li>
               ))}
             </ul>
           )}
           <div className="flex gap-2 border-t border-slate-800 pt-3">
             <input className="input" placeholder="Débannir un identifiant (ex. steam_7656…)" value={unbanId} onChange={(e) => setUnbanId(e.target.value)} />
-            <button className="btn" disabled={!unbanId.trim()} onClick={() => run(() => api.unban(unbanId.trim()), "Joueur débanni").then(() => setUnbanId(""))}>Débannir</button>
+            <button className="btn" disabled={!unbanId.trim()} onClick={() => run(() => api.unban(unbanId.trim()), "Joueur débanni").then(() => setUnbanId(""))}>{t("Débannir")}</button>
           </div>
           <p className="text-xs text-slate-500">Seuls les bannissements faits depuis l'application sont listés ; le serveur garde sa propre liste.</p>
         </div>
@@ -131,28 +132,28 @@ export default function Players({ snap, notify }: { snap: Snapshot | null; notif
       {tab === "Liste blanche" && s && (
         <div className="card space-y-3">
           <div className="flex items-center gap-3">
-            <h2 className="font-semibold">Liste blanche</h2>
+            <h2 className="font-semibold">{t("Liste blanche")}</h2>
             <label className="ml-auto flex items-center gap-2 text-sm">
               <input type="checkbox" checked={s.access.whitelist_enabled} onChange={(e) => saveAccess({ whitelist_enabled: e.target.checked })} /> Activée (les autres sont expulsés)
             </label>
           </div>
           <p className="text-sm text-slate-400">Quand elle est activée, tout joueur absent de la liste est expulsé quelques secondes après sa connexion. Elle ne fonctionne que si l'application tourne et que l'API REST répond.</p>
-          {s.access.whitelist_enabled && s.access.allowed.length === 0 && <p className="text-sm text-amber-300" role="status">La liste est vide : par sécurité, personne n'est expulsé tant que vous n'avez ajouté aucun joueur.</p>}
+          {s.access.whitelist_enabled && s.access.allowed.length === 0 && <p className="text-sm text-amber-300" role="status">{t("La liste est vide : par sécurité, personne n'est expulsé tant que vous n'avez ajouté aucun joueur.")}</p>}
           <ul className="divide-y divide-slate-800 text-sm">
             {s.access.allowed.map((a) => (
               <li key={a.user_id} className="flex items-center gap-3 py-2">
                 <div><strong>{a.name || "(sans nom)"}</strong><div className="text-xs text-slate-500">{a.user_id}</div></div>
-                <button className="btn ml-auto" onClick={() => saveAccess({ allowed: s.access.allowed.filter((x) => x.user_id !== a.user_id) })}>Retirer</button>
+                <button className="btn ml-auto" onClick={() => saveAccess({ allowed: s.access.allowed.filter((x) => x.user_id !== a.user_id) })}>{t("Retirer")}</button>
               </li>
             ))}
-            {s.access.allowed.length === 0 && <li className="py-2 text-slate-400">Aucun joueur autorisé.</li>}
+            {s.access.allowed.length === 0 && <li className="py-2 text-slate-400">{t("Aucun joueur autorisé.")}</li>}
           </ul>
           <div className="flex flex-wrap gap-2">
             <button className="btn" disabled={players.length === 0} onClick={() => players.forEach((p) => allow(p.userId, p.name))}>Ajouter les joueurs connectés ({players.length})</button>
             <input className="input max-w-xs" placeholder="Identifiant (ex. steam_7656…)" value={newId} onChange={(e) => setNewId(e.target.value)} />
-            <button className="btn" disabled={!newId.trim()} onClick={() => { const id = newId.trim(); const k = known.find((x) => x.user_id === id); allow(id, k?.name ?? ""); setNewId(""); }}>Ajouter</button>
+            <button className="btn" disabled={!newId.trim()} onClick={() => { const id = newId.trim(); const k = known.find((x) => x.user_id === id); allow(id, k?.name ?? ""); setNewId(""); }}>{t("Ajouter")}</button>
           </div>
-          <label className="block text-sm"><span className="mb-1 block text-slate-400">Message montré à l'expulsé</span>
+          <label className="block text-sm"><span className="mb-1 block text-slate-400">{t("Message montré à l'expulsé")}</span>
             <input className="input" placeholder="Ce serveur est privé (liste blanche)." value={s.access.kick_message} onChange={(e) => setS({ ...s, access: { ...s.access, kick_message: e.target.value } })} onBlur={() => saveAccess({ kick_message: s.access.kick_message })} /></label>
         </div>
       )}

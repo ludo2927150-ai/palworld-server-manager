@@ -13,4 +13,5 @@
 **Lot 1 (fait)** — redémarrages planifiés + annonces, seuil RAM, SteamCMD, adoption par nom de processus, ban/unban.
 **Lot 2 (fait)** — historique/graphiques, sessions, journal en direct, schéma de config ~90 clés + préréglages/diff/import-export, diagnostic de premier lancement.
 **Lot 3 (fait)** — backups vers un 2ᵉ emplacement, résumé quotidien, icône de zone de notification, lancement avec Windows.
-**Reste** — Credential Manager (mots de passe hors de settings.json), i18n FR/EN, accès mobile (page web + jeton, à valider avant d'ouvrir un port réseau).
+**Fait depuis** — gestion des joueurs (historique, bannis, liste blanche), assistant de premier lancement, secrets dans le Gestionnaire d'identifiants Windows, vérification/installation des mises à jour via les Releases GitHub, sélecteur FR/EN (traduction partielle : navigation, bannières, assistant, page Joueurs).
+**Reste** — finir la traduction anglaise des autres pages (`src/lib/i18n.ts`, le français sert de clé), signature de code de l'installeur (nécessite un certificat payant ; sans lui SmartScreen avertit), accès invité hors Tailscale (à n'ouvrir qu'avec accord explicite).
