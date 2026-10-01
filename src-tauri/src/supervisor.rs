@@ -1,37 +1,17 @@
 //! Boucle de fond : échantillonnage (5 s), alertes, planification des redémarrages, backups planifiés,
 //! redémarrage auto après crash. Émet l'événement `snapshot` vers le frontend à chaque tick.
 
-use crate::state::AppState;
-use palmanager_core::{alerts, health, steamcmd, announce, backup, players, perf, server::find_server_pids, history::{PlayerEvent, Sample}, summary, rest::RestClient, schedule::Action, settings::{AppSettings, RuleAction}};
+use crate::{automation, state::AppState};
+use palmanager_core::{alerts, health, steamcmd, announce, backup, players, perf, server::find_server_pids, history::{PlayerEvent, Sample}, summary, rest::RestClient, schedule::Action, settings::{AppSettings, RuleAction}, watchdog::Watchdog};
 use std::{collections::HashSet, sync::atomic::Ordering, time::{Duration, Instant}};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_notification::NotificationExt;
 
-/// Sauvegarde puis redémarre proprement (save REST → ZIP → arrêt → démarrage).
-async fn maintenance_restart(st: &AppState, s: &AppSettings) {
-    if st.maintenance.swap(true, Ordering::SeqCst) { return; }
-    if let Ok(api) = RestClient::new(&s.rest) { let _ = api.save().await; }
-    st.expected_stop.store(true, Ordering::SeqCst);
-    let _ = st.server.stop(s, Duration::from_secs(60)).await; // sauvegarde incluse (backup.on_stop)
-    st.expected_stop.store(false, Ordering::SeqCst);
-    let _ = st.server.start(s).await;
-    st.maintenance.store(false, Ordering::SeqCst);
-}
-
-/// Mise à jour du serveur : sauvegarde, arrêt, SteamCMD, relance si le serveur tournait. Renvoie le résultat de SteamCMD.
-async fn maintenance_update(st: &AppState, s: &AppSettings) -> palmanager_core::Result<String> {
-    if st.maintenance.swap(true, Ordering::SeqCst) { return Err(palmanager_core::Error::Other("une maintenance est déjà en cours".into())); }
-    let was_running = st.server.is_running().await;
-    if was_running {
-        if let Ok(api) = RestClient::new(&s.rest) { let _ = api.save().await; }
-        st.expected_stop.store(true, Ordering::SeqCst);
-        let _ = st.server.stop(s, Duration::from_secs(60)).await;
-    }
-    let out = steamcmd::update(&s.steamcmd_exe(), &s.server_dir).await;
-    st.expected_stop.store(false, Ordering::SeqCst);
-    if was_running { let _ = st.server.start(s).await; }
-    st.maintenance.store(false, Ordering::SeqCst);
-    out
+/// Cycle de maintenance sûr (voir `automation::guarded_cycle`) puis notification du résultat.
+async fn run_cycle(app: &AppHandle, st: &AppState, s: &AppSettings, label: &str, server_update: bool, suspect: &[String], profile: Option<&str>) {
+    let msg = automation::guarded_cycle(st, s, label, server_update, suspect, profile).await;
+    toast(app, s, &msg);
+    let _ = alerts::dispatch_text(&s.alerts, &msg).await;
 }
 
 /// Arrêt planifié : sauvegarde puis arrêt propre. `expected_stop` reste vrai pour éviter une fausse alerte de
@@ -87,6 +67,14 @@ pub fn spawn(app: AppHandle) {
         let mut last_limit_restart: Option<Instant> = None;
         let mut last_backup_alert: Option<Instant> = None;
         let mut last_sample = 0i64;
+        let mut wd = Watchdog::new();
+        let mut crash_blocked = false;
+        let mut prev_up = false;
+        let mut empty_wait: Option<Instant> = None;
+        let mut last_mod_check: Option<Instant> = None;
+        let mut upnp_port: Option<u16> = None;
+        let mut last_upnp: Option<Instant> = None;
+        let mut upnp_warned = false;
         let mut up_since: Option<Instant> = None;
         let mut last_health_check = Instant::now();
         let mut health_sent: std::collections::HashMap<&'static str, Instant> = std::collections::HashMap::new();
@@ -129,7 +117,14 @@ pub fn spawn(app: AppHandle) {
                     toast(&app, &s, &e.message());
                     let _ = alerts::dispatch(&s.alerts, e).await;
                 }
-                if matches!(e, alerts::Event::Crash) && s.auto_restart { let _ = st.server.start(&s).await; }
+                if matches!(e, alerts::Event::Crash) && s.auto_restart && !crash_blocked {
+                    if wd.record_crash(&s.watchdog, chrono::Utc::now().timestamp()) {
+                        crash_blocked = true;
+                        let m = format!("🛑 {} crashs en {} min : relance automatique arrêtée pour ne pas boucler. Consultez l'onglet Journal puis démarrez le serveur à la main.", s.watchdog.crash_loop_max, s.watchdog.crash_loop_window_minutes);
+                        toast(&app, &s, &m);
+                        let _ = alerts::dispatch_text(&s.alerts, &m).await;
+                    } else { let _ = st.server.start(&s).await; }
+                }
             }
 
             // Horaires programmés (démarrer / arrêter / redémarrer) et redémarrage préventif sur seuil de RAM.
@@ -144,18 +139,35 @@ pub fn spawn(app: AppHandle) {
                                 let _ = api.announce(&format!("{what} du serveur dans {minutes} minute(s).")).await;
                             }
                         }
-                        Action::Run(RuleAction::Start) => if !snap.running { scheduled_start(&st, &s).await },
-                        Action::Run(RuleAction::Stop) => if snap.running { maintenance_stop(&st, &s).await },
-                        Action::Run(RuleAction::Restart) => {
-                            if snap.running { maintenance_restart(&st, &s).await } else { scheduled_start(&st, &s).await }
-                        }
+                        Action::Run { action: RuleAction::Start, profile } => if !snap.running {
+                            if profile.is_some() { run_cycle(&app, &st, &s, "planifie", false, &[], profile.as_deref()).await } else { scheduled_start(&st, &s).await }
+                        },
+                        Action::Run { action: RuleAction::Stop, .. } => if snap.running { maintenance_stop(&st, &s).await },
+                        Action::Run { action: RuleAction::Restart, profile } => run_cycle(&app, &st, &s, "planifie", false, &[], profile.as_deref()).await,
                     }
                 }
                 if let Some(th) = s.schedule.memory_restart_percent.filter(|_| s.schedule.enabled && snap.running) {
-                    if snap.memory_percent >= th {
-                        if let Some(api) = &api { let _ = api.announce("Mémoire élevée : redémarrage dans 1 minute.").await; }
-                        tokio::time::sleep(Duration::from_secs(60)).await;
-                        maintenance_restart(&st, &s).await;
+                    if snap.memory_percent >= th && empty_wait.is_none() {
+                        let wait = s.schedule.memory_restart_wait_empty_minutes;
+                        if wait > 0 && !snap.players.is_empty() {
+                            if let Some(api) = &api { let _ = api.announce("Mémoire élevée : redémarrage dès que le serveur sera vide.").await; }
+                            empty_wait = Some(Instant::now() + Duration::from_secs(wait * 60));
+                        } else {
+                            if let Some(api) = &api { let _ = api.announce("Mémoire élevée : redémarrage dans 1 minute.").await; }
+                            tokio::time::sleep(Duration::from_secs(60)).await;
+                            run_cycle(&app, &st, &s, "memoire", false, &[], None).await;
+                        }
+                    }
+                }
+                if let Some(deadline) = empty_wait {
+                    if !snap.running { empty_wait = None; }
+                    else if snap.players.is_empty() || Instant::now() >= deadline {
+                        empty_wait = None;
+                        if !snap.players.is_empty() {
+                            if let Some(api) = &api { let _ = api.announce("Redémarrage dans 1 minute (mémoire élevée).").await; }
+                            tokio::time::sleep(Duration::from_secs(60)).await;
+                        }
+                        run_cycle(&app, &st, &s, "memoire", false, &[], None).await;
                     }
                 }
             }
@@ -188,7 +200,7 @@ pub fn spawn(app: AppHandle) {
                     if s.performance.memory_limit_restart {
                         if let Some(api) = &api { let _ = api.announce("Mémoire élevée : redémarrage dans 1 minute.").await; }
                         tokio::time::sleep(Duration::from_secs(60)).await;
-                        maintenance_restart(&st, &s).await;
+                        run_cycle(&app, &st, &s, "memoire", false, &[], None).await;
                     }
                 }
             }
@@ -279,13 +291,63 @@ pub fn spawn(app: AppHandle) {
                             tokio::time::sleep(Duration::from_secs(wait * 60)).await;
                         }
                         let _ = alerts::dispatch_text(&s.alerts, &format!("🔄 Mise à jour du serveur Palworld (build {} → {latest}).", installed.unwrap_or_default())).await;
-                        let msg = match maintenance_update(&st, &s).await {
-                            Ok(_) => "✅ Serveur Palworld mis à jour.".to_string(),
-                            Err(e) => format!("❌ Mise à jour du serveur échouée : {e}"),
-                        };
-                        toast(&app, &s, &msg);
-                        let _ = alerts::dispatch_text(&s.alerts, &msg).await;
+                        run_cycle(&app, &st, &s, "maj", true, &[], None).await;
                     }
+                }
+            }
+
+            // Surveillance : serveur gelé (API muette après avoir répondu) → redémarrage ; relance auto bloquée après une boucle de crashs.
+            {
+                let now_ts = chrono::Utc::now().timestamp();
+                let up = up_since.map_or(0, |t| t.elapsed().as_secs() as i64);
+                if wd.observe(&s.watchdog, now_ts, snap.running, snap.metrics.is_some(), up) && !maintenance {
+                    let m = format!("🧊 Le serveur ne répond plus depuis {} min (processus vivant) : redémarrage automatique.", s.watchdog.hung_minutes);
+                    toast(&app, &s, &m);
+                    let _ = alerts::dispatch_text(&s.alerts, &m).await;
+                    run_cycle(&app, &st, &s, "gel", false, &[], None).await;
+                }
+                if snap.running && !prev_up && crash_blocked { crash_blocked = false; wd.reset_crashes(); }
+                prev_up = snap.running;
+            }
+
+            // Mods gérés : téléchargés et mis à jour automatiquement. Un changement sur un serveur en marche déclenche un
+            // redémarrage sûr (annonce, sauvegarde, vérification, désactivation des mods fautifs si le serveur ne repart pas).
+            if s.mod_automation.auto_update && !s.mod_automation.managed_ids.is_empty() && !maintenance
+                && last_mod_check.map_or(started_at.elapsed() >= Duration::from_secs(180), |t| t.elapsed() >= Duration::from_secs(s.mod_automation.check_every_minutes.max(30) * 60))
+            {
+                last_mod_check = Some(Instant::now());
+                let (changed, errors) = automation::mods_sync(&s).await;
+                if !errors.is_empty() {
+                    let _ = alerts::dispatch_text(&s.alerts, &format!("⚠️ Mods : {}", errors.join(" ; "))).await;
+                }
+                if !changed.is_empty() && st.server.is_running().await {
+                    let names = automation::package_names(&s, &changed);
+                    let wait = s.server_update.warn_minutes.min(30);
+                    let _ = alerts::dispatch_text(&s.alerts, &format!("🧩 Mods mis à jour ({}) : redémarrage du serveur.", changed.join(", "))).await;
+                    if wait > 0 && !snap.players.is_empty() {
+                        if let Some(api) = &api { let _ = api.announce(&format!("Mise à jour de mods : redémarrage dans {wait} minute(s).")).await; }
+                        tokio::time::sleep(Duration::from_secs(wait * 60)).await;
+                    }
+                    run_cycle(&app, &st, &s, "mods", false, &names, None).await;
+                }
+            }
+
+            // UPnP : ouverture du port de jeu sur la box, uniquement si vous l'avez activée ; renouvelée toutes les 20 min.
+            {
+                let want = (s.upnp.enabled && snap.running).then(|| palmanager_core::upnp::game_port(s.load_world_options().ok().and_then(|(o, _)| palmanager_core::ini::get(&o, "PublicPort").map(String::from)).as_deref()));
+                match (want, upnp_port) {
+                    (Some(port), cur) if cur != Some(port) || last_upnp.is_none_or(|t| t.elapsed() >= Duration::from_secs(1200)) => {
+                        last_upnp = Some(Instant::now());
+                        match palmanager_core::net::lan_ip() {
+                            Some(ip) => match palmanager_core::upnp::open(port, ip).await {
+                                Ok(_) => { upnp_port = Some(port); upnp_warned = false; }
+                                Err(e) => if !upnp_warned { upnp_warned = true; let _ = alerts::dispatch_text(&s.alerts, &format!("⚠️ UPnP : {e}")).await; },
+                            },
+                            None => {}
+                        }
+                    }
+                    (None, Some(port)) => { let _ = palmanager_core::upnp::close(port).await; upnp_port = None; last_upnp = None; }
+                    _ => {}
                 }
             }
 

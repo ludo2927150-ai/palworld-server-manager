@@ -225,22 +225,9 @@ pub async fn players_bans(st: S<'_>) -> Result<Vec<palmanager_core::players::Ban
 /// Arrête le serveur, met à jour via SteamCMD, puis relance s'il tournait. Renvoie la fin du log SteamCMD.
 #[tauri::command]
 pub async fn update_server(st: S<'_>) -> Result<String> {
-    if st.maintenance.swap(true, Ordering::SeqCst) { return Err(Error::Other("une maintenance est déjà en cours".into())); }
     let s = st.settings.read().await.clone();
-    let was_running = st.server.is_running().await;
-    let res = async {
-        if was_running {
-            if let Ok(api) = RestClient::new(&s.rest) { let _ = api.save().await; }
-            st.expected_stop.store(true, Ordering::SeqCst);
-            st.server.stop(&s, Duration::from_secs(60)).await?;
-        }
-        let out = steamcmd::update(&s.steamcmd_exe(), &s.server_dir).await;
-        st.expected_stop.store(false, Ordering::SeqCst);
-        if was_running { st.server.start(&s).await?; }
-        out
-    }.await;
-    st.maintenance.store(false, Ordering::SeqCst);
-    res
+    // Sauvegarde, mise à jour, redémarrage, vérification et retour arrière automatique si le serveur ne repart pas.
+    Ok(crate::automation::guarded_cycle(&st, &s, "maj", true, &[], None).await)
 }
 
 #[tauri::command]
@@ -440,7 +427,19 @@ pub async fn mods_add(st: S<'_>, input: String) -> Result<String> {
             format!(" Attention : le serveur lit actuellement {r} ; ce mod est dans {}. Choisissez un seul dossier Workshop.", dl.display()),
         _ => String::new(),
     };
-    Ok(format!("Mod {id} téléchargé.{note}"))
+    // Mod géré : tenu à jour automatiquement, et activé s'il fonctionne sur un serveur dédié.
+    let mut s2 = st.settings.write().await;
+    if !s2.mod_automation.managed_ids.contains(&id) { s2.mod_automation.managed_ids.push(id.clone()); }
+    let _ = s2.save(&st.settings_path);
+    drop(s2);
+    let ms = mods::load_settings(&s.server_dir);
+    let pkg = mods::scan(&dl, &s.server_dir, &ms.active).into_iter().find(|m| m.workshop_id == id);
+    let activated = match pkg {
+        Some(m) if m.server_compatible => { let mut ms = ms; mods::set_active(&mut ms, &m.package_name, true); mods::save_settings(&s.server_dir, &ms)?; " Activé." }
+        Some(_) => " Non activé : ce mod n'est pas compatible serveur dédié.",
+        None => "",
+    };
+    Ok(format!("Mod {id} téléchargé.{activated}{note} Redémarrez le serveur pour le charger."))
 }
 
 /// Retire un mod téléchargé par l'application (dossier du serveur) et le désactive.
@@ -450,6 +449,7 @@ pub async fn mods_remove(st: S<'_>, workshop_id: String) -> Result<()> {
     let mut ms = mods::load_settings(&s.server_dir);
     let pkg = mods::scan(&mods::download_root(&s.server_dir), &s.server_dir, &[]).into_iter().find(|m| m.workshop_id == workshop_id).map(|m| m.package_name);
     mods::remove_downloaded(&s.server_dir, &workshop_id)?;
+    { let mut w = st.settings.write().await; w.mod_automation.managed_ids.retain(|i| i != &workshop_id); let _ = w.save(&st.settings_path); }
     if let Some(p) = pkg { mods::set_active(&mut ms, &p, false); mods::save_settings(&s.server_dir, &ms)?; }
     Ok(())
 }
@@ -506,13 +506,7 @@ pub async fn profile_save(st: S<'_>, name: String) -> Result<()> {
 #[tauri::command]
 pub async fn profile_apply(st: S<'_>, name: String) -> Result<usize> {
     let s = st.settings.read().await.clone();
-    let (mut cur, _) = s.load_world_options()?;
-    let n = palmanager_core::profiles::apply(&mut cur, &st.profiles.load(&name)?);
-    let path = s.world_settings_path();
-    if let Some(dir) = path.parent() { std::fs::create_dir_all(dir)?; }
-    if path.exists() { std::fs::copy(&path, path.with_extension("ini.bak"))?; }
-    std::fs::write(path, ini::serialize(&cur))?;
-    Ok(n)
+    crate::automation::apply_profile(&st, &s, &name)
 }
 
 #[tauri::command]
@@ -541,4 +535,79 @@ pub async fn use_running_server_dir(app: tauri::AppHandle, st: S<'_>) -> Result<
     *st.settings.write().await = s;
     crate::remote::apply(&app).await;
     Ok(dir.display().to_string())
+}
+
+/// Enregistre l'ensemble actuel des mods activés comme pack.
+#[tauri::command]
+pub async fn mod_pack_save(st: S<'_>, name: String) -> Result<()> {
+    let name = name.trim().chars().take(40).collect::<String>();
+    if name.is_empty() { return Err(Error::Other("nom de pack vide".into())); }
+    let mut s = st.settings.write().await;
+    let active = mods::load_settings(&s.server_dir).active;
+    s.mod_automation.packs.retain(|p| p.name != name);
+    s.mod_automation.packs.push(palmanager_core::settings::ModPack { name, package_names: active });
+    s.save(&st.settings_path)
+}
+
+/// Active exactement les mods du pack (ceux qui existent et fonctionnent sur un serveur dédié). Renvoie ceux qui manquent.
+#[tauri::command]
+pub async fn mod_pack_apply(st: S<'_>, name: String) -> Result<Vec<String>> {
+    let s = st.settings.read().await.clone();
+    let pack = s.mod_automation.packs.iter().find(|p| p.name == name).ok_or_else(|| Error::Other("pack introuvable".into()))?.clone();
+    let mut ms = mods::load_settings(&s.server_dir);
+    let root = ms.workshop_root.clone().map(std::path::PathBuf::from).or_else(|| mods::candidate_roots(&s.server_dir).into_iter().next()).unwrap_or_else(|| mods::download_root(&s.server_dir));
+    let available = mods::scan(&root, &s.server_dir, &[]);
+    let missing = mods::apply_pack(&mut ms, &pack.package_names, &available);
+    mods::save_settings(&s.server_dir, &ms)?;
+    Ok(missing)
+}
+
+#[tauri::command]
+pub async fn mod_pack_delete(st: S<'_>, name: String) -> Result<()> {
+    let mut s = st.settings.write().await;
+    s.mod_automation.packs.retain(|p| p.name != name);
+    s.save(&st.settings_path)
+}
+
+/// Installation complète depuis zéro : SteamCMD puis le serveur Palworld, avec progression (événement `install-log`).
+/// L'application est ensuite configurée sur ces dossiers. Ne touche à rien d'existant hors du dossier choisi.
+#[tauri::command]
+pub async fn install_everything(app: tauri::AppHandle, st: S<'_>, base_dir: String) -> Result<()> {
+    use tauri::Emitter;
+    let base = std::path::PathBuf::from(base_dir.trim().trim_matches('"'));
+    if base.as_os_str().is_empty() || !base.is_absolute() { return Err(Error::Other("indiquez un dossier absolu (ex. C:\\palworld)".into())); }
+    if st.maintenance.swap(true, Ordering::SeqCst) { return Err(Error::Other("une maintenance est déjà en cours".into())); }
+    let emit = |m: &str| { let _ = app.emit("install-log", m.to_string()); };
+    let res: Result<()> = async {
+        std::fs::create_dir_all(&base)?;
+        if palmanager_core::health::free_space(&base).is_some_and(|f| f < palmanager_core::install::MIN_FREE_BYTES) {
+            return Err(Error::Other("espace disque insuffisant (12 Go libres conseillés)".into()));
+        }
+        emit("Téléchargement de SteamCMD…");
+        let steamcmd_dir = base.join("steamcmd");
+        let exe = palmanager_core::install::download_steamcmd(&steamcmd_dir).await?;
+        emit("Première exécution de SteamCMD (mise à jour automatique)…");
+        palmanager_core::install::run_streaming(&exe, &["+quit".to_string()], |l| emit(&l)).await?;
+        emit("Installation du serveur Palworld (plusieurs Go, patience)…");
+        let server_dir = base.join("PalServer");
+        palmanager_core::install::install_server(&exe, &server_dir, |l| emit(&l)).await?;
+        let mut s = st.settings.write().await;
+        s.server_dir = server_dir;
+        s.steamcmd_path = exe;
+        s.save(&st.settings_path)?;
+        emit("Terminé : serveur installé et application configurée.");
+        Ok(())
+    }.await;
+    st.maintenance.store(false, Ordering::SeqCst);
+    res
+}
+
+/// Essaie d'ouvrir le port de jeu via UPnP (test manuel depuis l'interface) ; renvoie l'adresse publique vue par la box.
+#[tauri::command]
+pub async fn upnp_test(st: S<'_>) -> Result<String> {
+    let s = st.settings.read().await.clone();
+    let port = palmanager_core::upnp::game_port(s.load_world_options().ok().and_then(|(o, _)| ini::get(&o, "PublicPort").map(String::from)).as_deref());
+    let ip = palmanager_core::net::lan_ip().ok_or_else(|| Error::Other("adresse du PC sur le réseau local introuvable".into()))?;
+    let public = palmanager_core::upnp::open(port, ip).await?;
+    Ok(format!("Port UDP {port} ouvert vers {ip}. Adresse publique vue par la box : {public}"))
 }
