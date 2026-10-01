@@ -105,6 +105,8 @@ impl PlayerBook {
 
     pub fn is_online(&self, id: &str) -> bool { self.online.contains(id) }
 
+    pub fn get(&self, id: &str) -> Option<&KnownPlayer> { self.players.get(id) }
+
     /// Joueurs connus, du plus récemment vu au plus ancien.
     pub fn list(&self) -> Vec<KnownPlayer> {
         let mut v: Vec<_> = self.players.values().cloned().collect();

@@ -2,7 +2,7 @@
 //! redémarrage auto après crash. Émet l'événement `snapshot` vers le frontend à chaque tick.
 
 use crate::{automation, state::AppState};
-use palmanager_core::{alerts, health, steamcmd, announce, backup, players, perf, server::find_server_pids, history::{PlayerEvent, Sample}, summary, rest::RestClient, schedule::Action, settings::{AppSettings, RuleAction}, watchdog::Watchdog};
+use palmanager_core::{restoretest, season, alerts, health, steamcmd, announce, backup, players, perf, server::find_server_pids, history::{PlayerEvent, Sample}, summary, rest::RestClient, schedule::{Action, WeeklyTrigger}, settings::{AppSettings, RuleAction}, watchdog::Watchdog};
 use std::{collections::HashSet, sync::atomic::Ordering, time::{Duration, Instant}};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_notification::NotificationExt;
@@ -24,6 +24,7 @@ async fn cycle_task(app: AppHandle, s: AppSettings, label: &'static str, server_
         tokio::time::sleep(Duration::from_secs(secs)).await;
     }
     let msg = automation::run_locked(&st, &s, label, server_update, &suspect, profile.as_deref()).await;
+    st.audit.record(&format!("auto:{label}"), "cycle de maintenance", &msg);
     toast(&app, &s, &msg);
     let _ = alerts::dispatch_text(&s.alerts, &msg).await;
 }
@@ -108,6 +109,23 @@ async fn warn_backup(s: &AppSettings, last: &mut Option<Instant>, what: &str, er
     let _ = alerts::dispatch_text(&s.alerts, &format!("⚠️ Sauvegarde ({what}) impossible : {err}")).await;
 }
 
+/// Test de restauration de la dernière sauvegarde (voir `restoretest`) ; enregistre et renvoie le résultat.
+pub async fn run_restore_test(s: &AppSettings, state_path: &std::path::Path) -> restoretest::RestoreTestState {
+    let dest = s.backup.destination.clone();
+    let res = tokio::task::spawn_blocking(move || {
+        let newest = backup::list(&dest)?.into_iter().next().ok_or_else(|| palmanager_core::Error::Other("aucune sauvegarde à tester".into()))?;
+        restoretest::run(&newest.path)
+    }).await;
+    let t = chrono::Utc::now().timestamp();
+    let st = match res {
+        Ok(Ok(r)) => restoretest::RestoreTestState { t, ok: true, detail: format!("{} : {} fichiers, {:.1} Mo, {} joueur(s)", r.archive, r.files, r.bytes as f64 / 1e6, r.players) },
+        Ok(Err(e)) => restoretest::RestoreTestState { t, ok: false, detail: e.to_string() },
+        Err(e) => restoretest::RestoreTestState { t, ok: false, detail: e.to_string() },
+    };
+    restoretest::save_state(state_path, &st);
+    st
+}
+
 pub fn spawn(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let mut last_backup = Instant::now();
@@ -124,6 +142,9 @@ pub fn spawn(app: AppHandle) {
         let mut last_backup_alert: Option<Instant> = None;
         let mut last_sample = 0i64;
         let mut wd = Watchdog::new();
+        let mut weekly = WeeklyTrigger::new();
+        let mut last_rt_check = Instant::now();
+        let mut last_season_check = Instant::now() - Duration::from_secs(3600);
         let mut crash_blocked = false;
         let mut prev_up = false;
         let mut empty_wait: Option<Instant> = None;
@@ -274,9 +295,15 @@ pub fn spawn(app: AppHandle) {
                     // Bienvenue aux nouveaux arrivants. Pas au premier instantané après le lancement de l'application :
                     // les joueurs déjà connectés ne sont pas « nouveaux ».
                     if welcome_ready && s.announcements.enabled {
-                        if let (Some(tpl), Some(api)) = (s.announcements.welcome.as_deref().filter(|t| !t.trim().is_empty()), &api) {
+                        if let (Some(p), Some(api)) = (snap.players.iter().find(|p| &p.name == n), &api) {
+                            // Dernière visite connue AVANT cette connexion (le carnet est mis à jour plus bas dans le tick).
+                            let last_seen = st.players.lock().await.get(&p.user_id).map(|k| k.last_seen);
                             let max = snap.metrics.as_ref().map(|m| m.maxplayernum);
-                            let _ = api.announce(&announce::render(tpl, Some(n), snap.players.len(), max)).await;
+                            let today = chrono::Local::now().format("%m-%d").to_string();
+                            let who = announce::Arriving { user_id: &p.user_id, name: n, last_seen };
+                            if let Some(text) = announce::welcome_for(&s.announcements, &who, ts, &today, snap.players.len(), max) {
+                                let _ = api.announce(&text).await;
+                            }
                         }
                     }
                 }
@@ -372,6 +399,61 @@ pub fn spawn(app: AppHandle) {
                     }
                     (None, Some(port)) => { let _ = palmanager_core::upnp::close(port).await; upnp_port = None; last_upnp = None; }
                     _ => {}
+                }
+            }
+
+            // Rapport hebdomadaire (Discord / ntfy).
+            if weekly.due(s.alerts.weekly_report_day, s.alerts.daily_summary_time.as_deref(), chrono::Local::now().naive_local()) {
+                let since = ts - 7 * 86_400;
+                let players = st.players.lock().await.list();
+                let text = summary::weekly(&st.history.samples_since(since, 20_000), &st.history.events_since(since), &players, ts);
+                let _ = alerts::dispatch_text(&s.alerts, &text).await;
+            }
+
+            // Copie miroir en échec : alerte (au plus une par heure).
+            if let Some(e) = backup::take_mirror_error() { warn_backup(&s, &mut last_backup_alert, "copie miroir", &e).await; }
+
+            // Test de restauration automatique (tous les N jours) : vérifié toutes les 10 minutes.
+            if let (Some(days), true, false) = (s.backup.restore_test_days, last_rt_check.elapsed() >= Duration::from_secs(600), maintenance) {
+                last_rt_check = Instant::now();
+                let last = restoretest::load_state(&st.restore_test_path);
+                if ts - last.t >= days as i64 * 86_400 && backup::list(&s.backup.destination).is_ok_and(|l| !l.is_empty()) {
+                    let res = run_restore_test(&s, &st.restore_test_path).await;
+                    if !res.ok {
+                        let m = format!("❌ Test de restauration échoué : {}. Vos sauvegardes pourraient ne pas être utilisables.", res.detail);
+                        toast(&app, &s, &m);
+                        let _ = alerts::dispatch_text(&s.alerts, &m).await;
+                    }
+                    st.audit.record("auto:test-restauration", if res.ok { "réussi" } else { "échoué" }, &res.detail);
+                }
+            }
+
+            // Calendrier de saisons : profil appliqué pendant la période, retour automatique ensuite (à partir de 04:00).
+            if !maintenance && !s.schedule.events.is_empty() && last_season_check.elapsed() >= Duration::from_secs(300) {
+                last_season_check = Instant::now();
+                let local = chrono::Local::now();
+                if local.time() >= chrono::NaiveTime::from_hms_opt(4, 0, 0).unwrap_or_default() {
+                    let mut state = season::load_state(&st.season_path);
+                    match season::decide(&s.schedule.events, local.date_naive(), &state) {
+                        season::Decision::Start(e) => {
+                            let rp = season::return_profile_name(&e.name);
+                            if let Ok((cur, _)) = s.load_world_options() { let _ = st.profiles.save(&rp, &cur); }
+                            state = season::SeasonState { applied: Some(e.name.clone()), return_profile: Some(rp) };
+                            season::save_state(&st.season_path, &state);
+                            let _ = alerts::dispatch_text(&s.alerts, &format!("🎉 Début de l'événement « {} » (profil « {} »).", e.name, e.profile)).await;
+                            let warn = (snap.running && !snap.players.is_empty()).then(|| (60, e.announce.clone().unwrap_or_else(|| format!("Événement « {} » : redémarrage dans 1 minute.", e.name))));
+                            if snap.running { run_cycle(&app, &s, "saison", false, vec![], Some(e.profile.clone()), warn); }
+                            else if let Err(err) = automation::apply_profile(&st, &s, &e.profile) { let _ = alerts::dispatch_text(&s.alerts, &format!("⚠️ Profil de l'événement non appliqué : {err}")).await; }
+                        }
+                        season::Decision::End { event, return_profile } => {
+                            season::save_state(&st.season_path, &season::SeasonState::default());
+                            let _ = alerts::dispatch_text(&s.alerts, &format!("🏁 Fin de l'événement « {event} » : retour à la configuration d'avant.")).await;
+                            let warn = (snap.running && !snap.players.is_empty()).then(|| (60, format!("Fin de l'événement « {event} » : redémarrage dans 1 minute.")));
+                            if snap.running { run_cycle(&app, &s, "saison", false, vec![], Some(return_profile), warn); }
+                            else if let Err(err) = automation::apply_profile(&st, &s, &return_profile) { let _ = alerts::dispatch_text(&s.alerts, &format!("⚠️ Retour à la configuration d'avant non appliqué : {err}")).await; }
+                        }
+                        season::Decision::Nothing => {}
+                    }
                 }
             }
 

@@ -15,17 +15,18 @@ impl Backend for TauriBackend {
     async fn control(&self, action: Control) -> Result<()> {
         let st = self.0.state::<AppState>();
         match action {
-            Control::Start => commands::server_start(st).await,
-            Control::Stop => commands::server_stop(st).await,
-            Control::Restart => commands::server_restart(st).await,
+            Control::Start => commands::server_start_inner(&st).await,
+            Control::Stop => commands::server_stop_inner(&st).await,
+            Control::Restart => commands::server_restart_inner(&st).await,
         }
     }
     async fn history(&self, hours: i64) -> Vec<Sample> { commands::get_history(self.0.state::<AppState>(), hours).await.unwrap_or_default() }
     async fn sessions(&self, days: i64) -> Vec<Session> { commands::get_sessions(self.0.state::<AppState>(), days).await.unwrap_or_default() }
     async fn logs(&self, offset: Option<u64>) -> Result<LogChunk> { commands::read_logs(self.0.state::<AppState>(), offset).await }
-    async fn backup_now(&self) -> Result<BackupInfo> { commands::backup_now(self.0.state::<AppState>()).await }
-    async fn announce(&self, message: String) -> Result<()> { commands::announce(self.0.state::<AppState>(), message).await }
-    async fn kick(&self, user_id: String) -> Result<()> { commands::kick_player(self.0.state::<AppState>(), user_id).await }
+    async fn backup_now(&self) -> Result<BackupInfo> { commands::backup_now_inner(&self.0.state::<AppState>(), "manuel".into()).await }
+    async fn announce(&self, message: String) -> Result<()> { commands::announce_inner(&self.0.state::<AppState>(), &message).await }
+    fn audit(&self, who: &str, action: &str, detail: &str) { self.0.state::<AppState>().audit.record(who, action, detail); }
+    async fn kick(&self, user_id: String) -> Result<()> { commands::kick_inner(&self.0.state::<AppState>(), &user_id).await }
 }
 
 /// (Ré)applique les paramètres d'accès distant. Les clés sont toujours rafraîchies à chaud (invitation créée ou

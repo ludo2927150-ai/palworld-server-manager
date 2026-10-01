@@ -68,28 +68,34 @@ pub async fn regenerate_remote_token(app: tauri::AppHandle, st: S<'_>) -> Result
     Ok(())
 }
 
-#[tauri::command]
-pub async fn server_start(st: S<'_>) -> Result<()> {
+pub async fn server_start_inner(st: &AppState) -> Result<()> {
     st.expected_stop.store(false, Ordering::SeqCst);
     let s = st.settings.read().await.clone();
     st.server.start(&s).await
 }
 
-#[tauri::command]
-pub async fn server_stop(st: S<'_>) -> Result<()> {
+pub async fn server_stop_inner(st: &AppState) -> Result<()> {
     st.expected_stop.store(true, Ordering::SeqCst);
     let s = st.settings.read().await.clone();
     st.server.stop(&s, Duration::from_secs(60)).await
 }
 
-#[tauri::command]
-pub async fn server_restart(st: S<'_>) -> Result<()> {
+pub async fn server_restart_inner(st: &AppState) -> Result<()> {
     let s = st.settings.read().await.clone();
     st.expected_stop.store(true, Ordering::SeqCst);
     st.server.stop(&s, Duration::from_secs(60)).await?;
     st.expected_stop.store(false, Ordering::SeqCst);
     st.server.start(&s).await
 }
+
+#[tauri::command]
+pub async fn server_start(st: S<'_>) -> Result<()> { st.audit.record("app", "serveur : démarrage", ""); server_start_inner(&st).await }
+
+#[tauri::command]
+pub async fn server_stop(st: S<'_>) -> Result<()> { st.audit.record("app", "serveur : arrêt", ""); server_stop_inner(&st).await }
+
+#[tauri::command]
+pub async fn server_restart(st: S<'_>) -> Result<()> { st.audit.record("app", "serveur : redémarrage", ""); server_restart_inner(&st).await }
 
 #[tauri::command]
 pub async fn get_snapshot(st: S<'_>) -> Result<Snapshot> { Ok(st.last_snapshot.read().await.clone()) }
@@ -110,6 +116,7 @@ pub struct WorldSettings {
 #[tauri::command]
 pub async fn write_world_settings(st: S<'_>, options: Options) -> Result<()> {
     ini::validate(&options)?;
+    st.audit.record("app", "configuration du monde modifiée", "");
     let path = st.settings.read().await.world_settings_path();
     if let Some(dir) = path.parent() { std::fs::create_dir_all(dir)?; }
     if path.exists() { std::fs::copy(&path, path.with_extension("ini.bak"))?; }
@@ -117,11 +124,33 @@ pub async fn write_world_settings(st: S<'_>, options: Options) -> Result<()> {
     Ok(())
 }
 
-#[tauri::command]
-pub async fn backup_now(st: S<'_>) -> Result<BackupInfo> {
+pub async fn backup_now_inner(st: &AppState, label: String) -> Result<BackupInfo> {
     let s = st.settings.read().await.clone();
     if let Ok(api) = RestClient::new(&s.rest) { let _ = api.save().await; } // flush disque avant copie
-    tokio::task::spawn_blocking(move || backup::backup_all(&s, Some("manuel"))).await.map_err(|e| Error::Other(e.to_string()))?
+    tokio::task::spawn_blocking(move || backup::backup_all(&s, Some(&label))).await.map_err(|e| Error::Other(e.to_string()))?
+}
+
+#[tauri::command]
+pub async fn backup_now(st: S<'_>) -> Result<BackupInfo> { st.audit.record("app", "sauvegarde manuelle", ""); backup_now_inner(&st, "manuel".into()).await }
+
+/// Sauvegarde « gardée » (avant un événement important) : jamais supprimée par la rotation tant qu'elle n'est pas déprotégée.
+#[tauri::command]
+pub async fn backup_now_protected(st: S<'_>, name: Option<String>) -> Result<BackupInfo> {
+    let clean: String = name.unwrap_or_default().chars().filter(|c| c.is_ascii_alphanumeric()).take(20).collect();
+    let label = format!("garde{}{}", if clean.is_empty() { "" } else { "-" }, clean);
+    st.audit.record("app", "sauvegarde protégée", &clean);
+    backup_now_inner(&st, label).await
+}
+
+/// Protège ou déprotège une sauvegarde existante (elle est renommée).
+#[tauri::command]
+pub async fn backup_set_protected(st: S<'_>, path: String, on: bool) -> Result<()> {
+    let dest = st.settings.read().await.backup.destination.canonicalize()?;
+    let p = std::path::PathBuf::from(&path).canonicalize()?;
+    if !p.starts_with(&dest) { return Err(Error::Other("archive hors du dossier de sauvegarde".into())); }
+    backup::set_protected(&p, on)?;
+    st.audit.record("app", if on { "sauvegarde protégée" } else { "sauvegarde déprotégée" }, &path);
+    Ok(())
 }
 
 #[tauri::command]
@@ -134,6 +163,7 @@ pub async fn list_backups(st: S<'_>) -> Result<Vec<BackupInfo>> {
 /// (archive `-arret` ou `-avant-restauration`, et dossier `SaveGames.bak`).
 #[tauri::command]
 pub async fn restore_backup(st: S<'_>, path: String) -> Result<()> {
+    st.audit.record("app", "restauration du monde", &path);
     let s = st.settings.read().await.clone();
     // On n'accepte que des archives situées dans le dossier de sauvegarde configuré.
     let p = std::path::PathBuf::from(&path).canonicalize()?;
@@ -177,18 +207,23 @@ pub async fn test_alert(app: tauri::AppHandle, st: S<'_>) -> Result<()> {
     alerts::dispatch(&cfg, &alerts::Event::PlayerJoined("Test".into())).await
 }
 
-#[tauri::command]
-pub async fn announce(st: S<'_>, message: String) -> Result<()> {
-    RestClient::new(&st.settings.read().await.rest)?.announce(&message).await
+pub async fn announce_inner(st: &AppState, message: &str) -> Result<()> {
+    RestClient::new(&st.settings.read().await.rest)?.announce(message).await
+}
+
+pub async fn kick_inner(st: &AppState, user_id: &str) -> Result<()> {
+    RestClient::new(&st.settings.read().await.rest)?.kick(user_id, "Expulsé par l'administrateur").await
 }
 
 #[tauri::command]
-pub async fn kick_player(st: S<'_>, user_id: String) -> Result<()> {
-    RestClient::new(&st.settings.read().await.rest)?.kick(&user_id, "Expulsé par l'administrateur").await
-}
+pub async fn announce(st: S<'_>, message: String) -> Result<()> { st.audit.record("app", "annonce", &message); announce_inner(&st, &message).await }
+
+#[tauri::command]
+pub async fn kick_player(st: S<'_>, user_id: String) -> Result<()> { st.audit.record("app", "expulsion", &user_id); kick_inner(&st, &user_id).await }
 
 #[tauri::command]
 pub async fn ban_player(st: S<'_>, user_id: String, name: Option<String>, reason: Option<String>) -> Result<()> {
+    st.audit.record("app", "bannissement", &format!("{user_id} {}", reason.clone().unwrap_or_default()));
     let msg = reason.clone().filter(|r| !r.trim().is_empty()).unwrap_or_else(|| "Banni par l'administrateur".into());
     RestClient::new(&st.settings.read().await.rest)?.ban(&user_id, &msg).await?;
     st.bans.lock().await.add(palmanager_core::players::BanEntry {
@@ -198,6 +233,7 @@ pub async fn ban_player(st: S<'_>, user_id: String, name: Option<String>, reason
 
 #[tauri::command]
 pub async fn unban_player(st: S<'_>, user_id: String) -> Result<()> {
+    st.audit.record("app", "débannissement", &user_id);
     RestClient::new(&st.settings.read().await.rest)?.unban(&user_id).await?;
     st.bans.lock().await.remove(&user_id)
 }
@@ -228,6 +264,7 @@ pub async fn players_bans(st: S<'_>) -> Result<Vec<palmanager_core::players::Ban
 /// Arrête le serveur, met à jour via SteamCMD, puis relance s'il tournait. Renvoie la fin du log SteamCMD.
 #[tauri::command]
 pub async fn update_server(st: S<'_>) -> Result<String> {
+    st.audit.record("app", "mise à jour du serveur", "");
     let s = st.settings.read().await.clone();
     // Sauvegarde, mise à jour, redémarrage, vérification et retour arrière automatique si le serveur ne repart pas.
     Ok(crate::automation::guarded_cycle(&st, &s, "maj", true, &[], None).await)
@@ -419,6 +456,7 @@ pub async fn mods_set_active(st: S<'_>, package_name: String, active: bool) -> R
 /// Si aucun dossier Workshop n'est encore défini, celui du serveur est adopté.
 #[tauri::command]
 pub async fn mods_add(st: S<'_>, input: String) -> Result<String> {
+    st.audit.record("app", "mod ajouté", &input);
     let id = mods::parse_workshop_id(&input).ok_or_else(|| Error::Other("identifiant ou adresse Workshop invalide".into()))?;
     let s = st.settings.read().await.clone();
     steamcmd::download_workshop(&s.steamcmd_exe(), &s.server_dir, &id).await?;
@@ -448,6 +486,7 @@ pub async fn mods_add(st: S<'_>, input: String) -> Result<String> {
 /// Retire un mod téléchargé par l'application (dossier du serveur) et le désactive.
 #[tauri::command]
 pub async fn mods_remove(st: S<'_>, workshop_id: String) -> Result<()> {
+    st.audit.record("app", "mod retiré", &workshop_id);
     let s = st.settings.read().await.clone();
     let mut ms = mods::load_settings(&s.server_dir);
     let pkg = mods::scan(&mods::download_root(&s.server_dir), &s.server_dir, &[]).into_iter().find(|m| m.workshop_id == workshop_id).map(|m| m.package_name);
@@ -508,6 +547,7 @@ pub async fn profile_save(st: S<'_>, name: String) -> Result<()> {
 /// Applique un profil sur PalWorldSettings.ini (copie `.ini.bak`). Renvoie le nombre de valeurs modifiées ; redémarrage du serveur requis.
 #[tauri::command]
 pub async fn profile_apply(st: S<'_>, name: String) -> Result<usize> {
+    st.audit.record("app", "profil appliqué", &name);
     let s = st.settings.read().await.clone();
     crate::automation::apply_profile(&st, &s, &name)
 }
@@ -636,6 +676,7 @@ pub async fn player_snapshot_now(st: S<'_>, player_id: String) -> Result<Option<
 /// puis le serveur est relancé s'il tournait. Les objets, Pals et bases du joueur ne sont PAS concernés (voir `playersaves`).
 #[tauri::command]
 pub async fn player_restore(st: S<'_>, path: String) -> Result<Vec<String>> {
+    st.audit.record("app", "restauration d'une fiche joueur", &path);
     let s = st.settings.read().await.clone();
     let root = s.backup.destination.join("joueurs").canonicalize()?;
     let p = std::path::PathBuf::from(&path).canonicalize()?;
@@ -674,3 +715,63 @@ pub async fn player_export(st: S<'_>, path: String, target_dir: Option<String>) 
     std::fs::copy(&p, &out)?;
     Ok(out.display().to_string())
 }
+
+// ───────────── Audit, verrou, test de restauration, saisons ─────────────
+
+#[tauri::command]
+pub fn audit_recent(st: S<'_>, limit: Option<usize>) -> Vec<palmanager_core::audit::AuditEntry> { st.audit.recent(limit.unwrap_or(200).min(1000)) }
+
+#[derive(serde::Serialize)]
+pub struct LockStatus { pub enabled: bool, pub auto_lock_minutes: u32 }
+
+#[tauri::command]
+pub async fn lock_status(st: S<'_>) -> Result<LockStatus> {
+    let l = st.settings.read().await.lock.clone();
+    Ok(LockStatus { enabled: l.enabled, auto_lock_minutes: l.auto_lock_minutes })
+}
+
+/// Vérifie le code. Chaque échec ralentit la réponse (1 s) pour décourager les essais en rafale.
+#[tauri::command]
+pub async fn lock_verify(st: S<'_>, pin: String) -> Result<bool> {
+    let l = st.settings.read().await.lock.clone();
+    let ok = palmanager_core::lock::verify(&l, &pin);
+    if !ok { tokio::time::sleep(Duration::from_secs(1)).await; st.audit.record("app", "verrou : code refusé", ""); }
+    Ok(ok)
+}
+
+/// Définit, change ou retire le code (`new_pin` vide = retirer). Si un code existe, l'ancien est exigé.
+#[tauri::command]
+pub async fn lock_set(st: S<'_>, current: Option<String>, new_pin: Option<String>, auto_lock_minutes: u32) -> Result<()> {
+    let mut s = st.settings.write().await;
+    if s.lock.enabled && !palmanager_core::lock::verify(&s.lock, &current.unwrap_or_default()) { return Err(Error::Other("code actuel incorrect".into())); }
+    match new_pin.filter(|p| !p.is_empty()) {
+        Some(p) => palmanager_core::lock::set_pin(&mut s.lock, &p)?,
+        None => palmanager_core::lock::clear(&mut s.lock),
+    }
+    s.lock.auto_lock_minutes = auto_lock_minutes.min(24 * 60);
+    s.save(&st.settings_path)?;
+    drop(s);
+    st.audit.record("app", "verrou : réglage modifié", "");
+    Ok(())
+}
+
+#[derive(serde::Serialize)]
+pub struct RestoreTestView { pub t: i64, pub ok: bool, pub detail: String }
+
+#[tauri::command]
+pub fn restore_test_status(st: S<'_>) -> RestoreTestView {
+    let r = palmanager_core::restoretest::load_state(&st.restore_test_path);
+    RestoreTestView { t: r.t, ok: r.ok, detail: r.detail }
+}
+
+/// Lance le test de restauration maintenant (la dernière sauvegarde est extraite dans un dossier temporaire, puis supprimée).
+#[tauri::command]
+pub async fn restore_test_now(st: S<'_>) -> Result<RestoreTestView> {
+    let s = st.settings.read().await.clone();
+    let st2 = crate::supervisor::run_restore_test(&s, &st.restore_test_path).await;
+    Ok(RestoreTestView { t: st2.t, ok: st2.ok, detail: st2.detail })
+}
+
+/// Événement de saison actuellement appliqué (s'il y en a un).
+#[tauri::command]
+pub fn season_status(st: S<'_>) -> palmanager_core::season::SeasonState { palmanager_core::season::load_state(&st.season_path) }

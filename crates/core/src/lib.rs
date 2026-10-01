@@ -13,6 +13,7 @@ pub mod history;
 pub mod ini;
 pub mod install;
 pub mod loganalysis;
+pub mod lock;
 pub mod logs;
 pub mod mods;
 pub mod monitor;
