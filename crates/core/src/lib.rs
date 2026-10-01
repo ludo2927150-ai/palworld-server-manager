@@ -26,6 +26,7 @@ pub mod server;
 pub mod settings;
 pub mod summary;
 pub mod update;
+pub mod watchdog;
 pub mod setup;
 pub mod steamcmd;
 

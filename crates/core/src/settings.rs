@@ -18,6 +18,9 @@ pub struct AppSettings {
     pub access: AccessSettings,
     pub server_update: ServerUpdateSettings,
     pub discord_bot: DiscordBotSettings,
+    pub watchdog: WatchdogSettings,
+    pub mod_automation: ModAutomation,
+    pub upnp: UpnpSettings,
     pub remote: RemoteSettings,
     /// Chemin de `steamcmd.exe` (installation et mises à jour du serveur).
     pub steamcmd_path: PathBuf,
@@ -54,6 +57,9 @@ pub struct BackupSettings {
     pub mirror_destination: Option<PathBuf>,
     /// Sauvegarde systématique après chaque arrêt ou redémarrage du serveur (monde figé = copie cohérente).
     pub on_stop: bool,
+    /// Rétention par paliers : tout ce qui a moins de 24 h, puis une par jour pendant 7 jours, puis une par semaine pendant 4 semaines.
+    #[serde(default)]
+    pub tiered: bool,
 }
 
 /// Priorité CPU du processus serveur (la priorité « temps réel » est volontairement absente : elle peut figer Windows).
@@ -88,6 +94,9 @@ pub struct ScheduleRule {
     /// Jours concernés : 0 = lundi … 6 = dimanche ; vide = tous les jours.
     #[serde(default)]
     pub days: Vec<u8>,
+    /// Profil de configuration à appliquer juste avant l'exécution (démarrage ou redémarrage) ; `None` = inchangé.
+    #[serde(default)]
+    pub profile: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -100,6 +109,9 @@ pub struct ScheduleSettings {
     pub announce_minutes: Vec<u32>,
     /// Redémarre (avec préavis d'1 minute) si la RAM du serveur dépasse ce pourcentage.
     pub memory_restart_percent: Option<f32>,
+    /// Pour les redémarrages déclenchés par la mémoire : attendre que le serveur soit vide, au plus ce nombre de minutes (0 = ne pas attendre).
+    #[serde(default)]
+    pub memory_restart_wait_empty_minutes: u64,
 }
 
 /// Annonces en jeu : message de bienvenue et rappels réguliers. Variables : `{nom}` (bienvenue), `{joueurs}`, `{max}`.
@@ -239,6 +251,9 @@ impl Default for AppSettings {
             access: AccessSettings::default(),
             server_update: ServerUpdateSettings::default(),
             discord_bot: DiscordBotSettings::default(),
+            watchdog: WatchdogSettings::default(),
+            mod_automation: ModAutomation { check_every_minutes: 120, ..Default::default() },
+            upnp: UpnpSettings::default(),
             remote: RemoteSettings::default(),
             steamcmd_path: PathBuf::from("steamcmd.exe"),
             auto_restart: true,
@@ -255,16 +270,17 @@ impl Default for RestSettings {
 }
 impl Default for BackupSettings {
     fn default() -> Self {
-        Self { enabled: true, interval_minutes: 30, retention: 10, destination: PathBuf::from("backups"), mirror_destination: None, on_stop: true }
+        Self { enabled: true, interval_minutes: 30, retention: 10, destination: PathBuf::from("backups"), mirror_destination: None, on_stop: true, tiered: false }
     }
 }
 impl Default for ScheduleSettings {
     fn default() -> Self {
         Self {
             enabled: false,
-            rules: vec![ScheduleRule { time: "04:00".into(), action: RuleAction::Restart, days: vec![] }],
+            rules: vec![ScheduleRule { time: "04:00".into(), action: RuleAction::Restart, days: vec![], profile: None }],
             announce_minutes: vec![15, 5, 1],
             memory_restart_percent: None,
+            memory_restart_wait_empty_minutes: 0,
         }
     }
 }
@@ -280,6 +296,40 @@ pub struct DiscordBotSettings {
     /// Autorise aussi démarrer / arrêter / redémarrer / sauvegarder / annoncer (sinon lecture seule).
     pub allow_control: bool,
 }
+
+/// Surveillance : serveur gelé (processus vivant mais API muette) et crashs en boucle.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct WatchdogSettings {
+    pub enabled: bool,
+    /// Redémarre le serveur si l'API ne répond plus depuis ce nombre de minutes (après avoir répondu au moins une fois).
+    pub hung_minutes: u64,
+    /// Au-delà de ce nombre de crashs dans la fenêtre, la relance automatique s'arrête et vous êtes alerté.
+    pub crash_loop_max: usize,
+    pub crash_loop_window_minutes: u64,
+}
+impl Default for WatchdogSettings {
+    fn default() -> Self { Self { enabled: true, hung_minutes: 5, crash_loop_max: 3, crash_loop_window_minutes: 10 } }
+}
+
+/// Mods : synchronisation et mise à jour automatiques, et packs (jeux de mods activables d'un clic).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(default)]
+pub struct ModAutomation {
+    /// Identifiants Workshop à garder installés et à jour (ajoutés par l'onglet Mods).
+    pub managed_ids: Vec<String>,
+    /// Vérifie au démarrage et périodiquement que les mods gérés sont installés et à jour.
+    pub auto_update: bool,
+    pub check_every_minutes: u64,
+    pub packs: Vec<ModPack>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ModPack { pub name: String, pub package_names: Vec<String> }
+
+/// Ouverture automatique du port de jeu (UDP) sur la box via UPnP. Désactivé par défaut : cela expose le serveur de jeu à Internet.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(default)]
+pub struct UpnpSettings { pub enabled: bool }
 
 /// Mise à jour automatique du serveur Palworld (version Steam publique comparée à celle installée).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

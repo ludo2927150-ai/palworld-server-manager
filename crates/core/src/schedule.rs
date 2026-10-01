@@ -10,7 +10,7 @@ pub enum Action {
     /// Prévenir les joueurs qu'un arrêt/redémarrage a lieu dans `minutes`.
     Announce { minutes: u32, action: RuleAction },
     /// Exécuter l'action programmée maintenant.
-    Run(RuleAction),
+    Run { action: RuleAction, profile: Option<String> },
 }
 
 /// Déclencheur quotidien (résumé) : renvoie `true` une seule fois par jour, à partir de l'heure choisie.
@@ -62,7 +62,7 @@ impl Scheduler {
                     if let Some(&m) = newly.iter().min() { out.push(Action::Announce { minutes: m, action: rule.action }); }
                 }
                 if now >= target && now < target + Duration::minutes(2) && self.fired.insert((target, 0, idx)) {
-                    out.push(Action::Run(rule.action));
+                    out.push(Action::Run { action: rule.action, profile: rule.profile.clone() });
                 }
             }
         }
@@ -78,8 +78,8 @@ mod tests {
 
     // 2026-01-01 est un jeudi (days: 3).
     fn at(h: u32, m: u32, s: u32) -> NaiveDateTime { NaiveDate::from_ymd_opt(2026, 1, 1).unwrap().and_hms_opt(h, m, s).unwrap() }
-    fn rule(time: &str, action: RuleAction, days: &[u8]) -> ScheduleRule { ScheduleRule { time: time.into(), action, days: days.to_vec() } }
-    fn cfg(rules: Vec<ScheduleRule>) -> ScheduleSettings { ScheduleSettings { enabled: true, rules, announce_minutes: vec![15, 5, 1], memory_restart_percent: None } }
+    fn rule(time: &str, action: RuleAction, days: &[u8]) -> ScheduleRule { ScheduleRule { time: time.into(), action, days: days.to_vec(), profile: None } }
+    fn cfg(rules: Vec<ScheduleRule>) -> ScheduleSettings { ScheduleSettings { enabled: true, rules, announce_minutes: vec![15, 5, 1], memory_restart_percent: None, memory_restart_wait_empty_minutes: 0 } }
     use RuleAction::*;
 
     #[test]
@@ -90,7 +90,7 @@ mod tests {
         assert!(s.tick(&c, at(3, 45, 5)).is_empty());
         assert_eq!(s.tick(&c, at(3, 55, 0)), vec![Action::Announce { minutes: 5, action: Restart }]);
         assert_eq!(s.tick(&c, at(3, 59, 1)), vec![Action::Announce { minutes: 1, action: Restart }]);
-        assert_eq!(s.tick(&c, at(4, 0, 0)), vec![Action::Run(Restart)]);
+        assert_eq!(s.tick(&c, at(4, 0, 0)), vec![Action::Run { action: Restart, profile: None }]);
         assert!(s.tick(&c, at(4, 0, 5)).is_empty());
     }
 
@@ -99,9 +99,9 @@ mod tests {
         let c = cfg(vec![rule("07:00", Start, &[]), rule("23:00", Stop, &[])]);
         let mut s = Scheduler::new();
         assert!(s.tick(&c, at(6, 50, 0)).is_empty());
-        assert_eq!(s.tick(&c, at(7, 0, 0)), vec![Action::Run(Start)]);
+        assert_eq!(s.tick(&c, at(7, 0, 0)), vec![Action::Run { action: Start, profile: None }]);
         assert_eq!(s.tick(&c, at(22, 56, 0)), vec![Action::Announce { minutes: 5, action: Stop }]);
-        assert_eq!(s.tick(&c, at(23, 0, 1)), vec![Action::Run(Stop)]);
+        assert_eq!(s.tick(&c, at(23, 0, 1)), vec![Action::Run { action: Stop, profile: None }]);
     }
 
     #[test]
@@ -109,7 +109,7 @@ mod tests {
         let c = cfg(vec![rule("08:00", Stop, &[]), rule("08:00", Restart, &[])]);
         let mut s = Scheduler::new();
         let out = s.tick(&c, at(8, 0, 0));
-        assert!(out.contains(&Action::Run(Stop)) && out.contains(&Action::Run(Restart)));
+        assert!(out.contains(&Action::Run { action: Stop, profile: None }) && out.contains(&Action::Run { action: Restart, profile: None }));
     }
 
     #[test]
@@ -117,7 +117,7 @@ mod tests {
         // Jeudi = 3 : une règle « lundi seulement » ne se déclenche pas, « jeudi » oui.
         let mut s = Scheduler::new();
         assert!(s.tick(&cfg(vec![rule("04:00", Restart, &[0])]), at(4, 0, 0)).is_empty());
-        assert_eq!(s.tick(&cfg(vec![rule("04:00", Restart, &[3, 5])]), at(4, 0, 0)), vec![Action::Run(Restart)]);
+        assert_eq!(s.tick(&cfg(vec![rule("04:00", Restart, &[3, 5])]), at(4, 0, 0)), vec![Action::Run { action: Restart, profile: None }]);
     }
 
     #[test]
@@ -146,6 +146,14 @@ mod tests {
     #[test]
     fn single_digit_hour_is_accepted() {
         let mut s = Scheduler::new();
-        assert_eq!(s.tick(&cfg(vec![rule("4:00", Restart, &[])]), at(4, 0, 0)), vec![Action::Run(Restart)]);
+        assert_eq!(s.tick(&cfg(vec![rule("4:00", Restart, &[])]), at(4, 0, 0)), vec![Action::Run { action: Restart, profile: None }]);
+    }
+
+    #[test]
+    fn profile_travels_with_the_run_action() {
+        let mut r = rule("18:00", Restart, &[3]); // jeudi
+        r.profile = Some("Week-end".into());
+        let out = Scheduler::new().tick(&cfg(vec![r]), at(18, 0, 0));
+        assert_eq!(out, vec![Action::Run { action: Restart, profile: Some("Week-end".into()) }]);
     }
 }

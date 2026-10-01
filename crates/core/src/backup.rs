@@ -58,19 +58,50 @@ pub fn backup_all(s: &AppSettings, label: Option<&str>) -> Result<BackupInfo> {
         return Err(crate::Error::Other(format!("dossier de sauvegarde introuvable : {}", s.save_dir().display())));
     }
     let info = create_labeled(&s.save_dir(), &s.backup.destination, label)?;
-    rotate(&s.backup.destination, s.backup.retention)?;
+    // Une archive qu'on ne peut pas relire est pire que pas d'archive : on la supprime et on le dit.
+    if let Err(e) = verify(&info.path) {
+        let _ = std::fs::remove_file(&info.path);
+        return Err(crate::Error::Other(format!("sauvegarde {} défectueuse, supprimée : {e}", info.file_name)));
+    }
+    rotate_policy(&s.backup.destination, &s.backup)?;
     if let Some(m) = &s.backup.mirror_destination {
-        if let Err(e) = mirror(&info.path, m, s.backup.retention) { eprintln!("copie miroir impossible : {e}"); }
+        if let Err(e) = mirror(&info.path, m, &s.backup) { eprintln!("copie miroir impossible : {e}"); }
     }
     Ok(info)
 }
 
 /// Copie une archive vers un second emplacement puis applique la même rotation.
-pub fn mirror(archive: &Path, dest: &Path, keep: usize) -> Result<()> {
+pub fn mirror(archive: &Path, dest: &Path, cfg: &crate::settings::BackupSettings) -> Result<()> {
     std::fs::create_dir_all(dest)?;
     if let Some(name) = archive.file_name() { std::fs::copy(archive, dest.join(name))?; }
-    rotate(dest, keep)?;
+    rotate_policy(dest, cfg)?;
     Ok(())
+}
+
+/// Quelles sauvegardes garder (même ordre que `backups`, la plus récente d'abord) : tout ce qui a moins de 24 h, puis la plus
+/// récente de chaque jour jusqu'à 7 jours, puis la plus récente de chaque semaine jusqu'à 28 jours ; le reste est supprimé.
+/// La toute dernière est toujours conservée.
+pub fn plan_tiered(backups: &[BackupInfo], now: DateTime<Local>) -> Vec<bool> {
+    use chrono::Datelike;
+    let mut seen_days = std::collections::HashSet::new();
+    let mut seen_weeks = std::collections::HashSet::new();
+    backups.iter().enumerate().map(|(i, b)| {
+        let age = now - b.created;
+        if i == 0 || age < chrono::Duration::hours(24) { return true; }
+        if age < chrono::Duration::days(7) { return seen_days.insert(b.created.date_naive()); }
+        if age < chrono::Duration::days(28) { let w = b.created.iso_week(); return seen_weeks.insert((w.year(), w.week())); }
+        false
+    }).collect()
+}
+
+/// Rotation selon la politique choisie : par paliers, ou simplement les `retention` plus récentes.
+pub fn rotate_policy(dest: &Path, cfg: &crate::settings::BackupSettings) -> Result<usize> {
+    if !cfg.tiered { return rotate(dest, cfg.retention); }
+    let all = list(dest)?;
+    let keep = plan_tiered(&all, Local::now());
+    let mut n = 0;
+    for (b, k) in all.iter().zip(keep) { if !k { std::fs::remove_file(&b.path)?; n += 1; } }
+    Ok(n)
 }
 
 /// Sauvegardes existantes, la plus récente d'abord.
@@ -136,6 +167,26 @@ pub fn restore(archive: &Path, save_dir: &Path) -> Result<()> {
 mod tests {
     use super::*;
 
+    fn fake(age_h: i64) -> BackupInfo {
+        BackupInfo { file_name: format!("b{age_h}.zip"), path: format!("b{age_h}.zip").into(), size_bytes: 1, created: Local::now() - chrono::Duration::hours(age_h) }
+    }
+
+    #[test]
+    fn tiered_plan_keeps_recent_then_daily_then_weekly() {
+        // du plus récent au plus ancien
+        let ages = [1, 2, 5, 20, 30, 34, 60, 80, 200, 210, 400, 700];
+        let list: Vec<BackupInfo> = ages.iter().map(|h| fake(*h)).collect();
+        let keep = plan_tiered(&list, Local::now());
+        let kept: Vec<i64> = ages.iter().zip(&keep).filter(|(_, k)| **k).map(|(h, _)| *h).collect();
+        assert!(kept.starts_with(&[1, 2, 5, 20]), "{kept:?}"); // < 24 h : tout
+        assert!(!kept.contains(&700) && kept.contains(&400), "{kept:?}"); // 700 h ≈ 29 j : supprimé ; 400 h ≈ 17 j : gardé (palier hebdomadaire)
+        assert!(kept.len() < ages.len());
+        // une seule sauvegarde par jour entre 1 et 7 jours
+        let days: Vec<_> = list.iter().zip(&keep).filter(|(b, k)| **k && (Local::now() - b.created) >= chrono::Duration::hours(24) && (Local::now() - b.created) < chrono::Duration::days(7)).map(|(b, _)| b.created.date_naive()).collect();
+        assert_eq!(days.len(), days.iter().collect::<std::collections::HashSet<_>>().len());
+        assert!(plan_tiered(&[fake(900)], Local::now())[0]); // la dernière est toujours gardée
+    }
+
     #[test]
     fn verify_accepts_good_and_rejects_bad_archives() {
         let tmp = std::env::temp_dir().join(format!("pal-vf-{}", std::process::id()));
@@ -191,7 +242,7 @@ mod tests {
         assert_eq!(list(&dest).unwrap().len(), 1);
         assert_eq!(rotate(&dest, 5).unwrap(), 0);
         let second = tmp.join("mirror");
-        mirror(&list(&dest).unwrap()[0].path, &second, 5).unwrap();
+        mirror(&list(&dest).unwrap()[0].path, &second, &crate::settings::BackupSettings { retention: 5, ..Default::default() }).unwrap();
         assert_eq!(list(&second).unwrap().len(), 1);
         let arc = list(&dest).unwrap().remove(0).path;
         std::fs::remove_file(saves.join("Level.sav")).unwrap();
