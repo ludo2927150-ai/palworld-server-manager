@@ -1,8 +1,8 @@
 //! Boucle de fond : échantillonnage (5 s), alertes, planification des redémarrages, backups planifiés,
 //! redémarrage auto après crash. Émet l'événement `snapshot` vers le frontend à chaque tick.
 
-use crate::{commands::backup_everywhere, state::AppState};
-use palmanager_core::{alerts, history::{PlayerEvent, Sample}, summary, rest::RestClient, schedule::Action, settings::{AppSettings, RuleAction}};
+use crate::state::AppState;
+use palmanager_core::{alerts, backup, history::{PlayerEvent, Sample}, summary, rest::RestClient, schedule::Action, settings::{AppSettings, RuleAction}};
 use std::{collections::HashSet, sync::atomic::Ordering, time::{Duration, Instant}};
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -10,9 +10,8 @@ use tauri::{AppHandle, Emitter, Manager};
 async fn maintenance_restart(st: &AppState, s: &AppSettings) {
     if st.maintenance.swap(true, Ordering::SeqCst) { return; }
     if let Ok(api) = RestClient::new(&s.rest) { let _ = api.save().await; }
-    let _ = backup_everywhere(s);
     st.expected_stop.store(true, Ordering::SeqCst);
-    let _ = st.server.stop(s, Duration::from_secs(60)).await;
+    let _ = st.server.stop(s, Duration::from_secs(60)).await; // sauvegarde incluse (backup.on_stop)
     st.expected_stop.store(false, Ordering::SeqCst);
     let _ = st.server.start(s).await;
     st.maintenance.store(false, Ordering::SeqCst);
@@ -23,9 +22,8 @@ async fn maintenance_restart(st: &AppState, s: &AppSettings) {
 async fn maintenance_stop(st: &AppState, s: &AppSettings) {
     if st.maintenance.swap(true, Ordering::SeqCst) { return; }
     if let Ok(api) = RestClient::new(&s.rest) { let _ = api.save().await; }
-    let _ = backup_everywhere(s);
     st.expected_stop.store(true, Ordering::SeqCst);
-    let _ = st.server.stop(s, Duration::from_secs(60)).await;
+    let _ = st.server.stop(s, Duration::from_secs(60)).await; // sauvegarde incluse (backup.on_stop)
     st.maintenance.store(false, Ordering::SeqCst);
 }
 
@@ -34,10 +32,30 @@ async fn scheduled_start(st: &AppState, s: &AppSettings) {
     let _ = st.server.start(s).await;
 }
 
+/// Lance une sauvegarde complète hors du thread async ; renvoie le message d'erreur le cas échéant.
+async fn run_backup(s: &AppSettings, label: &'static str) -> Option<String> {
+    let s2 = s.clone();
+    match tokio::task::spawn_blocking(move || backup::backup_all(&s2, Some(label))).await {
+        Ok(Ok(_)) => None,
+        Ok(Err(e)) => Some(e.to_string()),
+        Err(e) => Some(e.to_string()),
+    }
+}
+
+/// Alerte (Discord/ntfy) en cas d'échec de sauvegarde, au plus une fois par heure pour ne pas spammer.
+async fn warn_backup(s: &AppSettings, last: &mut Option<Instant>, what: &str, err: &str) {
+    eprintln!("sauvegarde ({what}) en échec : {err}");
+    if last.is_some_and(|t| t.elapsed() < Duration::from_secs(3600)) { return; }
+    *last = Some(Instant::now());
+    let _ = alerts::dispatch_text(&s.alerts, &format!("⚠️ Sauvegarde ({what}) impossible : {err}")).await;
+}
+
 pub fn spawn(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let mut last_backup = Instant::now();
         let mut daily = palmanager_core::schedule::DailyTrigger::new();
+        let mut prev_running = false;
+        let mut last_backup_alert: Option<Instant> = None;
         let mut last_sample = 0i64;
         let mut known: HashSet<String> = HashSet::new();
         let mut tick = tokio::time::interval(Duration::from_secs(5));
@@ -50,6 +68,14 @@ pub fn spawn(app: AppHandle) {
 
             let snap = st.monitor.lock().await.sample(st.server.pid(), api.as_ref()).await;
             let expected = st.expected_stop.load(Ordering::SeqCst) || maintenance;
+            // Arrêt non demandé depuis l'application (fenêtre du serveur fermée, crash…) : sauvegarde du monde figé,
+            // avant toute relance automatique. Nos propres arrêts sont déjà sauvegardés par `ServerController::stop`.
+            if prev_running && !snap.running && !expected && s.backup.on_stop {
+                if let Some(e) = run_backup(&s, "arret-externe").await { warn_backup(&s, &mut last_backup_alert, "arrêt du serveur", &e).await; }
+            }
+            prev_running = snap.running;
+            if let Some(e) = st.server.take_backup_warning() { warn_backup(&s, &mut last_backup_alert, "arrêt du serveur", &e).await; }
+
             let events = st.alerts.lock().await.evaluate(&s.alerts, &snap, expected);
             for e in &events {
                 let _ = alerts::dispatch(&s.alerts, e).await;
@@ -86,7 +112,7 @@ pub fn spawn(app: AppHandle) {
 
             if s.backup.enabled && snap.running && last_backup.elapsed() >= Duration::from_secs(s.backup.interval_minutes.max(1) * 60) {
                 if let Some(api) = &api { let _ = api.save().await; }
-                let _ = backup_everywhere(&s);
+                if let Some(e) = run_backup(&s, "auto").await { warn_backup(&s, &mut last_backup_alert, "automatique", &e).await; }
                 last_backup = Instant::now();
             }
 

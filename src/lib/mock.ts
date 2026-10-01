@@ -4,7 +4,7 @@ const settings: AppSettings = {
   server_dir: "C:\\palworld\\PalServer", steamcmd_path: "steamcmd.exe",
   schedule: { enabled: false, rules: [{ time: "04:00", action: "restart", days: [] }], announce_minutes: [15, 5, 1], memory_restart_percent: null }, launch_args: ["-useperfthreads"], auto_restart: true, close_to_tray: false,
   rest: { host: "127.0.0.1", port: 8212, admin_password: "" },
-  backup: { enabled: true, interval_minutes: 30, retention: 20, destination: "backups", mirror_destination: null },
+  backup: { enabled: true, interval_minutes: 30, retention: 20, destination: "backups", mirror_destination: null, on_stop: true },
   alerts: { discord_webhook: null, ntfy_url: null, on_crash: true, on_player_join: true, on_player_leave: false, memory_threshold_percent: 90, cooldown_secs: 300, daily_summary_time: null },
 };
 let world: Opt[] = [

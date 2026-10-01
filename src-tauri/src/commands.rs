@@ -7,17 +7,6 @@ use tauri::State;
 
 type S<'a> = State<'a, AppState>;
 
-/// Sauvegarde + rotation, puis copie vers le second emplacement s'il est configuré.
-/// Une erreur de copie miroir n'invalide pas la sauvegarde principale.
-pub fn backup_everywhere(s: &AppSettings) -> Result<BackupInfo> {
-    let info = backup::create(&s.save_dir(), &s.backup.destination)?;
-    backup::rotate(&s.backup.destination, s.backup.retention)?;
-    if let Some(m) = &s.backup.mirror_destination {
-        if let Err(e) = backup::mirror(&info.path, m, s.backup.retention) { eprintln!("copie miroir impossible : {e}"); }
-    }
-    Ok(info)
-}
-
 #[tauri::command]
 pub async fn get_settings(st: S<'_>) -> Result<AppSettings> { Ok(st.settings.read().await.clone()) }
 
@@ -80,7 +69,7 @@ pub async fn write_world_settings(st: S<'_>, options: Options) -> Result<()> {
 pub async fn backup_now(st: S<'_>) -> Result<BackupInfo> {
     let s = st.settings.read().await.clone();
     if let Ok(api) = RestClient::new(&s.rest) { let _ = api.save().await; } // flush disque avant copie
-    backup_everywhere(&s)
+    tokio::task::spawn_blocking(move || backup::backup_all(&s, Some("manuel"))).await.map_err(|e| Error::Other(e.to_string()))?
 }
 
 #[tauri::command]
@@ -133,7 +122,6 @@ pub async fn update_server(st: S<'_>) -> Result<String> {
     let res = async {
         if was_running {
             if let Ok(api) = RestClient::new(&s.rest) { let _ = api.save().await; }
-            let _ = backup_everywhere(&s);
             st.expected_stop.store(true, Ordering::SeqCst);
             st.server.stop(&s, Duration::from_secs(60)).await?;
         }

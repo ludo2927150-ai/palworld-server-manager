@@ -12,7 +12,7 @@ export interface AppSettings {
   schedule: { enabled: boolean; rules: ScheduleRule[]; announce_minutes: number[]; memory_restart_percent: number | null };
   launch_args: string[]; auto_restart: boolean; close_to_tray: boolean;
   rest: { host: string; port: number; admin_password: string };
-  backup: { enabled: boolean; interval_minutes: number; retention: number; destination: string; mirror_destination: string | null };
+  backup: { enabled: boolean; interval_minutes: number; retention: number; destination: string; mirror_destination: string | null; on_stop: boolean };
   alerts: {
     discord_webhook: string | null; ntfy_url: string | null; on_crash: boolean; on_player_join: boolean;
     on_player_leave: boolean; memory_threshold_percent: number | null; cooldown_secs: number;

@@ -2,7 +2,7 @@
 //! n'est qu'un lanceur qui engendre `PalServer-Win64-Shipping-Cmd.exe`, et un serveur lancé avant
 //! l'application (ou en dehors d'elle) est ainsi « adopté » automatiquement.
 
-use crate::{rest::RestClient, settings::AppSettings, Error, Result};
+use crate::{backup, rest::RestClient, settings::AppSettings, Error, Result};
 use std::time::Duration;
 use sysinfo::System;
 use tokio::{process::{Child, Command}, sync::Mutex};
@@ -25,6 +25,8 @@ fn kill_all() {
 #[derive(Default)]
 pub struct ServerController {
     child: Mutex<Option<Child>>,
+    /// Dernière sauvegarde d'arrêt qui a échoué (récupérée une fois par le superviseur pour alerter).
+    backup_warning: std::sync::Mutex<Option<String>>,
 }
 
 impl ServerController {
@@ -38,6 +40,8 @@ impl ServerController {
         }
         !find_server_pids().is_empty()
     }
+
+    pub fn take_backup_warning(&self) -> Option<String> { self.backup_warning.lock().ok().and_then(|mut g| g.take()) }
 
     pub fn pid(&self) -> Option<u32> {
         self.child.try_lock().ok().and_then(|g| g.as_ref().and_then(|c| c.id())).or_else(|| find_server_pids().first().copied())
@@ -53,18 +57,31 @@ impl ServerController {
     }
 
     /// Arrêt propre via l'API REST (sauvegarde + décompte), repli sur kill après `grace`.
+    /// Une fois le serveur réellement arrêté (monde figé), une sauvegarde est faite si `backup.on_stop` est activé :
+    /// tous les chemins (bouton, horaires, mise à jour, redémarrage) passent donc par ici.
     pub async fn stop(&self, s: &AppSettings, grace: Duration) -> Result<()> {
         if !self.is_running().await { return Ok(()); }
         if let Ok(api) = RestClient::new(&s.rest) {
             let _ = api.shutdown(10, "Arrêt du serveur dans 10 secondes").await;
         }
         let deadline = tokio::time::Instant::now() + grace;
+        let mut stopped = false;
         while tokio::time::Instant::now() < deadline {
-            if !self.is_running().await { return Ok(()); }
+            if !self.is_running().await { stopped = true; break; }
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
-        kill_all();
-        *self.child.lock().await = None;
+        if !stopped {
+            kill_all();
+            *self.child.lock().await = None;
+            tokio::time::sleep(Duration::from_secs(2)).await; // laisse Windows libérer les fichiers
+        }
+        if s.backup.on_stop {
+            let s2 = s.clone();
+            let label = if stopped { "arret" } else { "arret-force" };
+            let res = tokio::task::spawn_blocking(move || backup::backup_all(&s2, Some(label))).await;
+            let err = match res { Ok(Ok(_)) => None, Ok(Err(e)) => Some(e.to_string()), Err(e) => Some(e.to_string()) };
+            if let (Some(e), Ok(mut g)) = (err, self.backup_warning.lock()) { *g = Some(e); }
+        }
         Ok(())
     }
 

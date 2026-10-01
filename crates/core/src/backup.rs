@@ -1,6 +1,6 @@
 //! Sauvegardes ZIP du dossier `SaveGames`, avec rotation.
 
-use crate::Result;
+use crate::{settings::AppSettings, Result};
 use chrono::{DateTime, Local};
 use serde::Serialize;
 use std::{fs::File, io::{Read, Write}, path::{Path, PathBuf}};
@@ -16,9 +16,16 @@ pub struct BackupInfo {
 }
 
 /// Crée `palworld-YYYYmmdd-HHMMSS.zip` dans `dest`. À appeler après un `save` REST pour un état cohérent.
-pub fn create(save_dir: &Path, dest: &Path) -> Result<BackupInfo> {
+pub fn create(save_dir: &Path, dest: &Path) -> Result<BackupInfo> { create_labeled(save_dir, dest, None) }
+
+/// Comme `create`, avec une étiquette dans le nom (`palworld-…-arret.zip`) pour savoir d'où vient la sauvegarde.
+pub fn create_labeled(save_dir: &Path, dest: &Path, label: Option<&str>) -> Result<BackupInfo> {
     std::fs::create_dir_all(dest)?;
-    let name = format!("palworld-{}.zip", Local::now().format("%Y%m%d-%H%M%S"));
+    let stamp = Local::now().format("%Y%m%d-%H%M%S");
+    let name = match label {
+        Some(l) => format!("palworld-{stamp}-{}.zip", l.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-').collect::<String>()),
+        None => format!("palworld-{stamp}.zip"),
+    };
     let path = dest.join(&name);
     let mut zip = ZipWriter::new(File::create(&path)?);
     let opts = FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
@@ -42,6 +49,20 @@ fn info_for(path: &Path) -> Result<BackupInfo> {
         size_bytes: md.len(),
         created: md.modified()?.into(),
     })
+}
+
+/// Sauvegarde complète : archive + rotation, puis copie vers le second emplacement s'il est configuré.
+/// Une erreur de copie miroir n'invalide pas la sauvegarde principale (elle est seulement signalée sur stderr).
+pub fn backup_all(s: &AppSettings, label: Option<&str>) -> Result<BackupInfo> {
+    if !s.save_dir().exists() {
+        return Err(crate::Error::Other(format!("dossier de sauvegarde introuvable : {}", s.save_dir().display())));
+    }
+    let info = create_labeled(&s.save_dir(), &s.backup.destination, label)?;
+    rotate(&s.backup.destination, s.backup.retention)?;
+    if let Some(m) = &s.backup.mirror_destination {
+        if let Err(e) = mirror(&info.path, m, s.backup.retention) { eprintln!("copie miroir impossible : {e}"); }
+    }
+    Ok(info)
 }
 
 /// Copie une archive vers un second emplacement puis applique la même rotation.
@@ -92,6 +113,25 @@ pub fn restore(archive: &Path, save_dir: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn labeled_backup_all() {
+        let tmp = std::env::temp_dir().join(format!("pal-bk2-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let s = AppSettings {
+            server_dir: tmp.clone(),
+            backup: crate::settings::BackupSettings { destination: tmp.join("out"), mirror_destination: Some(tmp.join("mir")), retention: 3, ..Default::default() },
+            ..Default::default()
+        };
+        assert!(backup_all(&s, Some("arret")).is_err()); // pas de dossier SaveGames
+        std::fs::create_dir_all(s.save_dir().join("0")).unwrap();
+        std::fs::write(s.save_dir().join("0/Level.sav"), b"x").unwrap();
+        let info = backup_all(&s, Some("arret ../x")).unwrap();
+        assert!(info.file_name.ends_with("-arretx.zip"), "{}", info.file_name); // étiquette assainie
+        assert_eq!(list(&tmp.join("out")).unwrap().len(), 1);
+        assert_eq!(list(&tmp.join("mir")).unwrap().len(), 1);
+        std::fs::remove_dir_all(tmp).ok();
+    }
 
     #[test]
     fn create_rotate_restore() {

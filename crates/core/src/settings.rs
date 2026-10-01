@@ -38,6 +38,8 @@ pub struct BackupSettings {
     pub destination: PathBuf,
     /// Second emplacement (autre disque, dossier synchronisé…) où chaque sauvegarde est aussi copiée.
     pub mirror_destination: Option<PathBuf>,
+    /// Sauvegarde systématique après chaque arrêt ou redémarrage du serveur (monde figé = copie cohérente).
+    pub on_stop: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -101,7 +103,7 @@ impl Default for RestSettings {
 }
 impl Default for BackupSettings {
     fn default() -> Self {
-        Self { enabled: true, interval_minutes: 30, retention: 20, destination: PathBuf::from("backups"), mirror_destination: None }
+        Self { enabled: true, interval_minutes: 30, retention: 20, destination: PathBuf::from("backups"), mirror_destination: None, on_stop: true }
     }
 }
 impl Default for ScheduleSettings {
