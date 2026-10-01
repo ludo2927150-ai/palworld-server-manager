@@ -31,6 +31,8 @@ pub struct AppSettings {
     pub setup_done: bool,
     /// Fichier journal à lire (vide = détection automatique du `.log` le plus récent sous `Pal/Saved`).
     pub log_file: Option<PathBuf>,
+    /// Lance le moteur du serveur directement (sans le lanceur) pour enregistrer sa console dans l'application.
+    pub capture_console: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -244,6 +246,7 @@ impl Default for AppSettings {
             close_to_tray: false,
             setup_done: false,
             log_file: None,
+            capture_console: true,
         }
     }
 }
@@ -325,6 +328,8 @@ impl AppSettings {
     }
 
     pub fn exe_path(&self) -> PathBuf { self.server_dir.join("PalServer.exe") }
+    /// Moteur du serveur, que `PalServer.exe` (simple lanceur) démarre dans sa propre fenêtre.
+    pub fn game_exe_path(&self) -> PathBuf { self.server_dir.join("Pal/Binaries/Win64/PalServer-Win64-Shipping-Cmd.exe") }
     /// `<server>/Pal/Saved/Config/WindowsServer/PalWorldSettings.ini`
     pub fn world_settings_path(&self) -> PathBuf {
         self.server_dir.join("Pal/Saved/Config/WindowsServer/PalWorldSettings.ini")

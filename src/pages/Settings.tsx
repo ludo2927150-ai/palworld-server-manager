@@ -77,6 +77,7 @@ export default function Settings({ notify }: { notify: (m: string) => void }) {
   return (
     <div className="space-y-4">
       <div className="card grid gap-4 md:grid-cols-2">
+        <Row label="Afficher la console du serveur dans l'application (lance le moteur directement, sans fenêtre noire ; se replie sur PalServer.exe en cas d'échec)"><input type="checkbox" checked={s.capture_console} onChange={(e) => setS({ ...s, capture_console: e.target.checked })} /></Row>
         <Row label="Fichier journal du serveur (vide = détection automatique)"><input className="input" placeholder="C:\\…\\Pal\\Saved\\Logs\\Pal.log" value={s.log_file ?? ""} onChange={(e) => setS({ ...s, log_file: e.target.value.trim() ? e.target.value : null })} /></Row>
         <Row label="Dossier du serveur (PalServer.exe)"><input className="input" value={s.server_dir} onChange={(e) => setS({ ...s, server_dir: e.target.value })} /></Row>
         <Row label="Arguments de lancement"><input className="input" value={s.launch_args.join(" ")} onChange={(e) => setS({ ...s, launch_args: e.target.value.split(" ").filter(Boolean) })} /></Row>

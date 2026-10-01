@@ -114,16 +114,24 @@ impl ServerController {
         if self.is_running().await { return Err(Error::Other("le serveur tourne déjà".into())); }
         let exe = s.exe_path();
         if !exe.exists() { return Err(Error::Other(format!("introuvable : {}", exe.display()))); }
-        let mut cmd = Command::new(exe);
-        cmd.args(&s.launch_args).current_dir(&s.server_dir);
-        if self.console_log.is_some() {
-            // La console du serveur est enregistrée et affichée dans l'application ; sans fenêtre noire pour le lanceur.
-            cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        // Console capturée : on démarre le moteur directement. Le lanceur PalServer.exe ouvre sinon sa propre fenêtre
+        // pour le moteur, hors de portée de l'application. Si le moteur s'arrête aussitôt, repli sur le lanceur.
+        let game = s.game_exe_path();
+        if let (true, Some(log), true) = (s.capture_console, &self.console_log, game.exists()) {
+            let mut cmd = Command::new(&game);
+            cmd.arg("Pal").args(&s.launch_args).current_dir(&s.server_dir).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
             #[cfg(windows)]
             cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+            if let Ok(mut child) = cmd.spawn() {
+                tokio::time::sleep(Duration::from_secs(3)).await;
+                if matches!(child.try_wait(), Ok(None)) {
+                    capture_output(&mut child, log.clone());
+                    *self.child.lock().await = Some(child);
+                    return Ok(());
+                }
+            }
         }
-        let mut child = cmd.spawn()?;
-        if let Some(log) = &self.console_log { capture_output(&mut child, log.clone()); }
+        let child = Command::new(exe).args(&s.launch_args).current_dir(&s.server_dir).spawn()?;
         *self.child.lock().await = Some(child);
         Ok(())
     }

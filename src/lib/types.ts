@@ -14,7 +14,7 @@ export interface AppSettings {
   remote: { enabled: boolean; port: number; token: string; guests: Guest[] };
   performance: PerformanceSettings;
   schedule: { enabled: boolean; rules: ScheduleRule[]; announce_minutes: number[]; memory_restart_percent: number | null };
-  launch_args: string[]; auto_restart: boolean; close_to_tray: boolean; start_server_on_launch: boolean; setup_done: boolean; log_file: string | null;
+  launch_args: string[]; auto_restart: boolean; close_to_tray: boolean; start_server_on_launch: boolean; setup_done: boolean; log_file: string | null; capture_console: boolean;
   rest: { host: string; port: number; admin_password: string };
   backup: { enabled: boolean; interval_minutes: number; retention: number; destination: string; mirror_destination: string | null; on_stop: boolean };
   alerts: {

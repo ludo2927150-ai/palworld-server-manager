@@ -13,6 +13,7 @@ export default function LogViewer({ notify, compact = false }: Props) {
   const [lines, setLines] = useState<string[]>([]);
   const [filter, setFilter] = useState("");
   const [follow, setFollow] = useState(true);
+  const [hideRest, setHideRest] = useState(true);
   const offset = useRef<number | null>(null);
   const source = useRef<string>("");
   const [info, setInfo] = useState<{ source: string; hint: string | null }>({ source: "", hint: null });
@@ -43,11 +44,13 @@ export default function LogViewer({ notify, compact = false }: Props) {
   useEffect(() => { if (follow && box.current) box.current.scrollTop = box.current.scrollHeight; }, [lines, follow]);
 
   const q = filter.trim().toLowerCase();
-  const shown = q ? lines.filter((l) => l.toLowerCase().includes(q)) : lines;
+  const visible = hideRest ? lines.filter((l) => !/REST accessed endpoint/i.test(l)) : lines;
+  const shown = q ? visible.filter((l) => l.toLowerCase().includes(q)) : visible;
   return (
     <div className={compact ? "space-y-2" : "flex h-full flex-col gap-3"}>
       <div className="flex flex-wrap items-center gap-3">
         <input className="input max-w-xs" placeholder="Filtrer (ex. error, joined)" value={filter} onChange={(e) => setFilter(e.target.value)} />
+        <label className="text-sm" title="L'application interroge l'API REST toutes les 5 secondes : ces lignes noient le reste"><input type="checkbox" checked={hideRest} onChange={(e) => setHideRest(e.target.checked)} /> Masquer les appels REST</label>
         <label className="text-sm"><input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} /> Suivre</label>
         <span className="text-xs text-slate-500">{shown.length} / {lines.length} lignes · {info.source || "aucun fichier"}</span>
       </div>

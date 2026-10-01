@@ -162,7 +162,7 @@
       if (l.lines.length) {
         const el = $("logs"); if (!el.childElementCount) el.textContent = "";
         const stick = el.scrollTop + el.clientHeight >= el.scrollHeight - 24;
-        l.lines.forEach((line) => { const d = document.createElement("div"); d.textContent = line; if (/error|fatal|crash/i.test(line)) d.className = "e"; else if (/warn/i.test(line)) d.className = "w"; el.append(d); });
+        l.lines.filter((line) => !/REST accessed endpoint/i.test(line)).forEach((line) => { const d = document.createElement("div"); d.textContent = line; if (/error|fatal|crash/i.test(line)) d.className = "e"; else if (/warn/i.test(line)) d.className = "w"; el.append(d); });
         while (el.childElementCount > 300) el.removeChild(el.firstChild);
         if (stick) el.scrollTop = el.scrollHeight;
       }
